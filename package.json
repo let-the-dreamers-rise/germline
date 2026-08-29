@@ -1,0 +1,21 @@
+{
+  "name": "germline",
+  "version": "0.1.0",
+  "description": "Heritable, selectable AI agents on 0G. ERC-7857 organisms that reproduce with verifiable heredity.",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:mainnet": "hardhat run scripts/deploy.js --network zerog",
+    "deploy:testnet": "hardhat run scripts/deploy.js --network galileo"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.10"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.9.6"
+  }
+}

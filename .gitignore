@@ -1,0 +1,9 @@
+.env
+node_modules/
+artifacts/
+cache/
+typechain-types/
+.next/
+out/
+deployments/*.local.json
+*.log
