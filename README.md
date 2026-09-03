@@ -1,9 +1,13 @@
 # Germline
 
-Germline is an optimisation layer you drop into an existing product. You
-declare what can vary and how you measure better; it evolves the configuration
-and hands back an improvement together with a record of how it got there that
-anyone can check.
+Germline is a provenance layer for configuration search. You declare what can
+vary and how you measure better; it searches, and hands back an improvement
+together with a record of how it got there that anyone can verify without
+trusting you.
+
+It does not claim to be a better optimiser than random sampling -- on smooth
+spaces nothing is, and it says so out loud. It claims that whatever search you
+ran, the result carries a lineage that survives an audit.
 
 ```js
 const { defineTrial, optimise } = require("germline");
@@ -43,29 +47,55 @@ versioning is mostly a spreadsheet and a good memory. That is becoming a
 compliance question rather than a hygiene one, and a vendor's own dashboard is
 not evidence: it is the vendor asserting something about itself.
 
+## What Germline does not claim
+
+An earlier version of this README said the search captured 80% of the
+available headroom for 21% of the evaluation budget. Both numbers were true.
+The claim was still wrong, because nobody had asked what random sampling does
+with the same budget. It wins, almost always:
+
+```
+landscape                  space budget  sampled  evolution  random   winner
+synthetic, smooth            216     45   20.83%       7821    9159   random
+synthetic, rugged            216     45   20.83%       5225    9500   random
+ARC corpus, real data       6144     38    0.62%       4865    4765   evolution
+```
+
+Run it yourself: `node scripts/benchmark.js`.
+
+The deciding variable is the **sampled** column, not the size of the space.
+When you can afford to try a fifth of every possible configuration, drawing at
+random is close to optimal and no selection machinery earns its keep. At well
+under one percent -- which is what a real configuration space looks like, and
+the only row above built on real recorded data -- selection is ahead.
+
+So Germline does not sell a better optimiser. **It sells a verifiable record
+of whatever search you ran.** The provenance layer is identical either way,
+and `search()` ships with the random control built in:
+
+```js
+const run = await search(trial, { budget: 40 });
+run.verdict.winner   // 'search' | 'random' | 'tied'
+run.baseline.median  // what random achieved on the same budget
+```
+
+If random wins on your space, use `strategy: 'random'` and keep the lineage.
+A tool that tells you not to use its own headline feature is more useful than
+one that does not, and the control runs by default so this claim cannot
+quietly rot again.
+
 ## What it is worth
-
-The RAG example has 216 possible configurations. Brute-forcing all of them to
-check the search honestly:
-
-| | score | evaluations |
-|---|---|---|
-| starting configuration | 4576 | -- |
-| Germline, 8 generations | 8333 | 45 |
-| global optimum, exhaustive | 9269 | 216 |
-
-Germline captures **80% of the available headroom for 21% of the evaluation
-budget**. It does not find the global optimum -- its answer ranks 28th of 216
--- and that trade is the point rather than a shortfall. Evaluations are not
-free: each one is a batch of model calls against a test set. Recovering most
-of the gain for a fifth of the spend is the offer, and it improves as the
-configuration space grows, because grid search grows exponentially and this
-does not.
 
 The integration surface is a function teams already own. Anyone far enough
 along to care about tuning has already built an eval -- a scored test set, a
 shadow replay, an offline judge. Germline needs exactly that and nothing else.
 No data leaves, no model is replaced, nothing sits in the request path.
+
+What it adds is a record: which configuration, derived from which parent,
+under a seed nobody could choose, scoring what, against evidence anyone can
+recompute. That is the part no eval platform gives you and no dashboard can
+substitute for, because the whole point is that the vendor is not the one
+asserting it.
 
 See `docs/BUSINESS.md` for the model, including which parts are measured and
 which are still assumptions.

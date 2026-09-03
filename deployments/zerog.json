@@ -1,0 +1,11 @@
+{
+  "network": "zerog",
+  "chainId": 16661,
+  "address": "0xA0448Cd63f746a60447cfF1817ec9781C25F7b25",
+  "deployTx": "0xc43ccfa57f07de81b72f8ce491cda49b3105231fdab52dd22113e461ad82e181",
+  "deployer": "0xA1918A4E578babad074ACf7DCefB152f8FDC8D2E",
+  "survivalThreshold": 3148,
+  "fecundityStep": 500,
+  "baseFecundity": 4,
+  "deployedAt": "2026-09-03T10:33:20.109Z"
+}

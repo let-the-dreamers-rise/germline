@@ -22,25 +22,35 @@ which is a rare alignment for a developer tool.
 
 ## What it is worth, measured
 
-From `examples/prompt-config.js`, a four-knob RAG agent with 216
-configurations. Brute-forcing the whole space to check the search honestly:
+This section previously claimed the search captured 80% of the available
+headroom for 21% of the evaluation budget. Both numbers were true. The claim
+was wrong anyway, because nobody had run the control. Here it is:
 
-| | score | evaluations |
-|---|---|---|
-| starting configuration | 4576 | -- |
-| Germline, 8 generations | 8333 | 45 |
-| global optimum, exhaustive | 9269 | 216 |
+```
+landscape                  space budget  sampled  evolution  random   winner
+synthetic, smooth            216     45   20.83%       7821    9159   random
+synthetic, rugged            216     45   20.83%       5225    9500   random
+ARC corpus, real data       6144     38    0.62%       4865    4765   evolution
+```
 
-Germline captures **80% of the available headroom for 21% of the evaluation
-budget**. It does not find the global optimum -- its result ranks 28th of 216
--- and pretending otherwise would be the kind of claim that falls apart in
-front of a customer.
+`node scripts/benchmark.js`. Random sampling beats the evolutionary search on
+two of three landscapes, and on the flagship example it wins **99.8% of the
+time**.
 
-That trade is the product. Evaluations are not free: each one is a batch of
-model calls against a test set, and a serious eval suite costs real money per
-run. A method that recovers most of the gain for a fifth of the spend is worth
-paying for, and it gets more worth paying for as the configuration space grows,
-because grid search grows exponentially and evolutionary search does not.
+That kills one business and clarifies another. Germline is not an optimiser
+vendor -- optimisation is a commodity and a good one is often four lines of
+`Math.random()`. Germline sells the record: which configuration, derived from
+which parent, under a seed nobody could choose, scoring what, against evidence
+anyone can recompute.
+
+The control now ships in the box and runs by default, so a customer discovers
+this from the tool rather than from a competitor. A vendor that tells you not
+to use its own headline feature is a vendor you can believe about the rest.
+
+Where selection does earn its place is sparse sampling -- under about one
+percent of the space, which is what a real configuration space looks like.
+That is a narrower claim than the original and it is the one supported by
+evidence.
 
 ## How it makes money
 
@@ -104,14 +114,15 @@ sides.
 ## Honest competitive picture
 
 Programmatic prompt optimisation exists. Eval platforms exist. Hyperparameter
-search is decades old and evolutionary search over configurations is not a new
-idea. If the pitch were "we optimise your config", the correct response would
-be that several people already do.
+search is decades old. If the pitch were "we optimise your config", the correct
+response would be that several people already do it, and our own benchmark
+says random sampling frequently does it better.
 
-What is different here is not the search. It is that the result carries a
-record anyone can verify without trusting the party that produced it, and that
-the result is an ownable asset rather than a row in someone's database. The
-search is table stakes; the provenance is the product.
+So that is not the pitch. What is different is that the result carries a record
+anyone can verify without trusting the party that produced it, and that the
+result is an ownable asset rather than a row in someone's database. The search
+is table stakes -- genuinely commodity, and we ship a competitor to our own in
+the same package. The provenance is the product.
 
 The honest risk is that provenance turns out to be a nice-to-have rather than
 a requirement, in which case Germline is competing on search quality alone
