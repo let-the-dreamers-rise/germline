@@ -34,7 +34,8 @@
     "check:storage": "node scripts/storage-check.js",
     "check:compute": "node scripts/compute-check.js",
     "deploy:mainnet": "hardhat run scripts/deploy.js --network zerog",
-    "deploy:testnet": "hardhat run scripts/deploy.js --network galileo"
+    "deploy:testnet": "hardhat run scripts/deploy.js --network galileo",
+    "demo": "node scripts/demo.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
