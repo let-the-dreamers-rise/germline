@@ -1,13 +1,11 @@
 # Germline
 
-**Germline finds a better configuration for your system, and proves how it
-found it.**
+### Tune your AI's settings automatically. Prove how you got there.
 
-You already have an eval -- a scored test set, a shadow replay, an offline
-judge. Point Germline at it, say which knobs may move, and it searches the
-space for you. You get back a configuration that scores higher than the one
-you are running, plus a record of every step that anyone can re-derive and
-check without taking your word for it.
+Your agent has twenty knobs and you tuned three of them. Germline turns the
+rest, using the eval you already have, and hands back a configuration that
+scores higher -- with a receipt anyone can check without taking your word
+for it.
 
 ```js
 const { defineTrial, search } = require("germline");
