@@ -170,10 +170,17 @@ seed, genome root and attested fitness. Mainnet, chain 16661. The contract
 compiles to 11,381 bytes and deploys for about 0.0095 0G.
 
 **0G Storage** holds the configurations themselves and the fitness
-transcripts, with the chain carrying their roots. An object's identity is the
-keccak256 of its canonical JSON, computed locally, so the verifiability claim
-never depends on a network being reachable. See `docs/STORAGE.md` for exactly
-what is implemented and what falls back.
+transcripts, with the chain carrying their roots. The read path runs against
+the live mainnet gateway and is verified -- `node scripts/storage-check.js`
+probes it, round-trips a payload, and confirms an unknown root comes back as a
+miss. Writing goes through the official `0g-storage-client`, because uploading
+is an on-chain submission to the Flow contract rather than an HTTP POST; the
+endpoint a web search reports for that purpose returns 404, which is why it
+was probed rather than trusted.
+
+An object's identity is the keccak256 of its canonical JSON, computed locally,
+so verification never depends on any network being reachable. `docs/STORAGE.md`
+records every probe and its response.
 
 **Agentic ID (ERC-7857)** is what made this possible to think about: it gives
 an agent an identity and a `clone()` primitive, which is reproduction in all
@@ -234,8 +241,11 @@ Stated plainly, because the edges matter more than the pitch.
 - **An attestor is trusted to report honestly.** The evidence root makes a
   score reproducible by anyone who fetches the transcript, so dishonesty is
   detectable after the fact -- but it is not prevented at the point of writing.
-- **0G Storage falls back to local.** When the storage network is unreachable,
-  objects are written locally and marked as such. Roots stay valid either way.
+- **0G Storage upload is opt-in and untested end to end.** Reading is verified
+  against the live mainnet gateway. Writing routes through the official client
+  and needs a funded key, so it is behind `ZEROG_STORAGE_UPLOAD=1` rather than
+  spending gas on every spawn. Without it, payloads are stored locally and say
+  so. Roots stay valid either way.
 - **No ERC-7857 oracle transfer.** As above: linkage, not reimplementation.
 - **Search is not guaranteed to find the global optimum.** It is an
   evolutionary search over a combinatorial space, and eight generations on the

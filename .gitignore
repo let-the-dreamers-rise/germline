@@ -7,3 +7,8 @@ typechain-types/
 out/
 deployments/*.local.json
 *.log
+
+# Content-addressed caches. Reproducible from the chain plus the engine, so
+# committing them would only add noise.
+storage/
+genomes/
