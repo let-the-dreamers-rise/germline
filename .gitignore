@@ -12,3 +12,6 @@ deployments/*.local.json
 # committing them would only add noise.
 storage/
 genomes/
+
+# Netlify CLI local state. Site id only, but tooling state does not belong in the repo.
+.netlify/
