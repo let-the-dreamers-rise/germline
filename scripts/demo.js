@@ -124,7 +124,7 @@ async function main() {
   await say("  A forged lineage fails arithmetic, not trust.", 2000);
 
   await beat("NEXT: run status.js and verify.js, then open the viewer");
-  await say("  https://let-the-dreamers-rise.github.io/germline/");
+  await say("  https://germline-demo.netlify.app/");
   await say("  contract 0xA0448Cd63f746a60447cfF1817ec9781C25F7b25 on 0G mainnet");
   await say("");
 }

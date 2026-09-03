@@ -65,7 +65,7 @@ argument for automated search.
 | 0G mainnet contract | `<<FILL AFTER DEPLOY>>` from `deployments/zerog.json` |
 | 0G Explorer link | `https://chainscan.0g.ai/address/<<CONTRACT>>` |
 | Demo video | `<<FILL AFTER RECORDING>>` YouTube or Loom, max 3 minutes |
-| Frontend demo | `web/index.html`, or a deployed link if hosted |
+| Live demo | `https://germline-demo.netlify.app/` -- explainer at `/explainer.html` |
 | X post | `<<FILL AFTER POSTING>>` |
 
 ### Proof of 0G integration

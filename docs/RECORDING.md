@@ -12,7 +12,7 @@ asks you to fake anything.
 3. **Rehearse once** with `PACE=fast npm run demo` so nothing surprises you.
 4. **Open two windows** and nothing else: the terminal, and a browser with two
    tabs -- `web/explainer.html` and the viewer at
-   `https://let-the-dreamers-rise.github.io/germline/`
+   `https://germline-demo.netlify.app/`
 5. **Recorder:** Win+G opens Xbox Game Bar. Record the window, not the whole
    desktop.
 
