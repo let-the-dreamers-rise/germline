@@ -1,0 +1,1214 @@
+<title>Germline</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='none' stroke='%23e2a63c' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='4' r='2.5' fill='%23e2a63c'/%3E%3Ccircle cx='27' cy='22' r='2.5' fill='%23e2a63c'/%3E%3Ccircle cx='5' cy='22' r='2.5' fill='%23e2a63c'/%3E%3Cpath d='M16 10V6M20.7 19l4.7 2.7M11.3 19l-4.7 2.7' stroke='%23e2a63c' stroke-width='1.6'/%3E%3C/svg%3E">
+<style>
+  /* ---- design tokens ---------------------------------------------------
+     One accent, one warning colour, everything else neutral. The idea is a
+     lab instrument reading out a measurement, not a product dashboard: flat
+     surfaces, no gradients, restrained colour spent only where it carries
+     meaning (the fittest point, a selection, a failed check). */
+  :root {
+    --bg: #0a0b0d;
+    --panel: #121419;
+    --panel-2: #171a20;
+    --border: #262a33;
+    --border-soft: #1c1f26;
+    --text: #e9ebef;
+    --text-dim: #9aa1ad;
+    --text-faint: #5b6270;
+    --accent: #e2a63c;
+    --accent-soft: #7a5a26;
+    --accent-glow: rgba(226, 166, 60, 0.14);
+    --bad: #d9634c;
+    --bad-glow: rgba(217, 99, 76, 0.14);
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", "Roboto Mono", Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", ui-sans-serif, Inter, Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { max-width: 1680px; margin: 0 auto; padding: 0 40px 72px; }
+
+  a { color: inherit; }
+  code, .mono { font-family: var(--mono); }
+
+  /* ---- topbar ----------------------------------------------------------- */
+  header.topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 28px; flex-wrap: wrap;
+    padding: 30px 0 22px;
+    border-bottom: 1px solid var(--border);
+  }
+  .wordmark { display: flex; align-items: baseline; gap: 14px; }
+  .wordmark .glyph {
+    width: 22px; height: 22px; flex: none; position: relative; top: 1px;
+  }
+  .wordmark h1 {
+    margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .wordmark .tagline {
+    color: var(--text-faint); font-size: 12.5px; letter-spacing: 0.03em;
+    border-left: 1px solid var(--border); padding-left: 14px; margin-left: 2px;
+  }
+  .topbar-stats {
+    display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+    font-size: 12.5px; color: var(--text-dim);
+  }
+  .stat { display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
+  .stat .label { text-transform: uppercase; letter-spacing: 0.08em; font-size: 10.5px; color: var(--text-faint); }
+  .stat .value { font-family: var(--mono); color: var(--text); font-size: 13px; }
+  .stat .value a { text-decoration: none; border-bottom: 1px dotted var(--text-faint); }
+  .stat .value a:hover { border-bottom-color: var(--accent); color: var(--accent); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 11px; border-radius: 100px; font-size: 11px;
+    letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;
+    border: 1px solid var(--border);
+    color: var(--text-dim); white-space: nowrap;
+  }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); }
+  .pill.live { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-glow); }
+  .pill.live .dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .pill.demo { color: var(--text-dim); }
+  .pill.demo .dot { background: var(--text-faint); }
+  .pill.bad { color: var(--bad); border-color: #5a3129; background: var(--bad-glow); }
+  .pill.bad .dot { background: var(--bad); }
+  .pill.wait .dot { animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+  /* ---- banner (fallback / error explanation) ---------------------------- */
+  .banner {
+    margin-top: 20px; padding: 13px 16px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--panel);
+    font-size: 13px; color: var(--text-dim); display: flex; gap: 12px; align-items: flex-start;
+  }
+  .banner.warn { border-color: #5a3129; background: var(--bad-glow); color: #e2b3a8; }
+  .banner b { color: var(--text); }
+  .banner .mark { flex: none; width: 16px; height: 16px; margin-top: 1px; }
+  .banner-actions { margin-left: auto; flex: none; }
+  .banner button {
+    background: none; border: 1px solid var(--border); color: var(--text-dim);
+    font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 4px; cursor: pointer;
+  }
+  .banner button:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---- sections ----------------------------------------------------------- */
+  section { margin-top: 44px; }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+  h2 {
+    margin: 0; font-size: 12.5px; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-dim);
+  }
+  h2 .n { color: var(--text-faint); font-weight: 500; text-transform: none; letter-spacing: 0; margin-left: 8px; }
+  .caption { font-size: 13px; color: var(--text-dim); max-width: 64ch; }
+  .caption b { color: var(--text); font-weight: 600; }
+  .caption .accent { color: var(--accent); font-weight: 600; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  }
+
+  /* ---- fitness chart ------------------------------------------------------- */
+  .chart-panel { padding: 22px 26px 14px; }
+  #fitness-chart { width: 100%; height: auto; display: block; overflow: visible; }
+  .chart-empty { padding: 60px 0; text-align: center; color: var(--text-faint); font-size: 13px; }
+
+  /* ---- lineage tree --------------------------------------------------------- */
+  .tree-panel { padding: 20px 0 8px; }
+  .tree-legend {
+    display: flex; gap: 22px; flex-wrap: wrap; padding: 0 26px 16px;
+    font-size: 11.5px; color: var(--text-faint); border-bottom: 1px solid var(--border-soft);
+    margin-bottom: 4px;
+  }
+  .tree-legend .item { display: flex; align-items: center; gap: 7px; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  .tree-scroll { overflow-x: auto; overflow-y: hidden; padding: 18px 26px 22px; }
+  #lineage-tree { display: block; }
+  .tree-empty { padding: 60px 26px; text-align: center; color: var(--text-faint); font-size: 13px; }
+
+  .node-circle { fill: var(--panel-2); stroke: var(--border); stroke-width: 1.5; cursor: pointer; transition: stroke 0.12s, fill 0.12s; }
+  .node-circle:hover { stroke: var(--text-dim); }
+  .node-group.selected .node-circle { stroke: var(--accent); stroke-width: 2.5; fill: #1c1710; }
+  .node-group.best .node-circle { fill: var(--accent-glow); stroke: var(--accent); }
+  .node-group.dead .node-circle { stroke-dasharray: 2.5 2.5; }
+  .node-id { font-family: var(--mono); font-size: 10.5px; fill: var(--text-dim); pointer-events: none; }
+  .node-group.selected .node-id, .node-group.best .node-id { fill: var(--accent); }
+  .node-label { font-size: 10px; fill: var(--text-faint); pointer-events: none; }
+  .node-group.selected .node-label { fill: var(--text-dim); }
+  .edge-line { stroke: var(--border); stroke-width: 1.4; fill: none; }
+  .edge-line.dead { stroke: #3a2c26; }
+
+  /* ---- two-up detail row --------------------------------------------------- */
+  .detail-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 980px) { .detail-row { grid-template-columns: 1fr; } }
+  .detail-panel, .verify-panel { padding: 20px 24px 24px; }
+
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px; }
+  .kv dt { color: var(--text-faint); white-space: nowrap; }
+  .kv dd { margin: 0; color: var(--text); font-family: var(--mono); word-break: break-all; }
+  .kv dd.phenotype { font-family: var(--sans); }
+  .kv dd .dim { color: var(--text-dim); font-family: var(--sans); }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .badge.dead { color: var(--bad); background: var(--bad-glow); border: 1px solid #5a3129; }
+  .badge.ok { color: var(--accent); background: var(--accent-glow); border: 1px solid var(--accent-soft); }
+  .badge.neutral { color: var(--text-dim); border: 1px solid var(--border); }
+
+  .empty-selection { color: var(--text-faint); font-size: 13px; padding: 12px 0; }
+
+  .changed-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+  .changed-list li { font-size: 12.5px; font-family: var(--mono); color: var(--text-dim); display: flex; gap: 8px; }
+  .changed-list .gene { color: var(--text); min-width: 100px; font-family: var(--mono); }
+  .changed-list .from { color: var(--text-faint); }
+  .changed-list .arrow { color: var(--text-faint); }
+  .changed-list .to { color: var(--accent); }
+
+  .verify-step { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-soft); }
+  .verify-step:first-of-type { margin-top: 4px; padding-top: 0; border-top: none; }
+  .verify-step .step-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); margin-bottom: 8px; }
+
+  .code-block {
+    background: #0d0f13; border: 1px solid var(--border); border-radius: 5px;
+    padding: 11px 13px; font-family: var(--mono); font-size: 12.5px; color: var(--text);
+    display: flex; align-items: center; gap: 10px; margin-top: 8px; overflow-x: auto;
+  }
+  .code-block .txt { white-space: pre; flex: 1; }
+  .copy-btn {
+    flex: none; background: none; border: 1px solid var(--border); color: var(--text-dim);
+    font: inherit; font-size: 11px; padding: 4px 9px; border-radius: 4px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copy-btn.copied { border-color: var(--accent); color: var(--accent); }
+
+  /* ---- genes ---------------------------------------------------------------- */
+  .genes-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .genes-table th {
+    text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-faint); font-weight: 600; padding: 0 16px 10px; border-bottom: 1px solid var(--border);
+  }
+  .genes-table td { padding: 12px 16px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+  .genes-table tr:last-child td { border-bottom: none; }
+  .genes-table .gene-key { font-family: var(--mono); color: var(--accent); white-space: nowrap; }
+  .genes-table .gene-kind { color: var(--text-dim); white-space: nowrap; font-size: 12px; }
+  .genes-table .gene-summary { color: var(--text-dim); }
+  .genes-panel { padding: 22px 8px 6px; }
+  .genes-panel-inner { padding: 0 18px; overflow-x: auto; }
+
+  /* ---- selection strip -------------------------------------------------------- */
+  .selection-strip {
+    display: flex; gap: 32px; flex-wrap: wrap; padding: 16px 24px; margin-top: 12px;
+  }
+  .selection-strip .item { display: flex; flex-direction: column; gap: 4px; }
+  .selection-strip .item .num { font-family: var(--mono); font-size: 18px; color: var(--accent); }
+  .selection-strip .item .desc { font-size: 12px; color: var(--text-dim); max-width: 30ch; }
+
+  footer {
+    margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--text-faint); display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+  }
+  footer .provenance { max-width: 80ch; }
+  footer .links a { color: var(--text-faint); text-decoration: none; border-bottom: 1px dotted var(--text-faint); }
+  footer .links a:hover { color: var(--accent); border-color: var(--accent); }
+
+  ::-webkit-scrollbar { height: 10px; width: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #262a33; border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #333844; }
+</style>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="wordmark">
+      <svg class="glyph" viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="6" fill="none" stroke="var(--accent)" stroke-width="2.2"/>
+        <circle cx="16" cy="4" r="2.4" fill="var(--accent)"/>
+        <circle cx="27" cy="22" r="2.4" fill="var(--accent)"/>
+        <circle cx="5" cy="22" r="2.4" fill="var(--accent)"/>
+        <path d="M16 10V6M20.7 19l4.7 2.7M11.3 19l-4.7 2.7" stroke="var(--accent)" stroke-width="1.4"/>
+      </svg>
+      <h1>Germline</h1>
+      <span class="tagline">heritable, selectable configurations &mdash; verified on 0G</span>
+    </div>
+    <div class="topbar-stats" id="topbar-stats">
+      <span id="mode-pill" class="pill wait"><span class="dot"></span>connecting</span>
+      <div class="stat"><span class="label">Network</span><span class="value" id="stat-network">&mdash;</span></div>
+      <div class="stat"><span class="label">Contract</span><span class="value" id="stat-address">&mdash;</span></div>
+      <div class="stat"><span class="label">Population</span><span class="value" id="stat-population">&mdash;</span></div>
+    </div>
+  </header>
+
+  <div id="banner-slot"></div>
+
+  <section>
+    <div class="section-head">
+      <h2>Fitness across generations</h2>
+      <div class="caption" id="chart-caption"></div>
+    </div>
+    <div class="panel chart-panel">
+      <svg id="fitness-chart" viewBox="0 0 1100 380" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div class="panel selection-strip" id="selection-strip"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Lineage<span class="n" id="lineage-count"></span></h2>
+      <div class="caption">Left to right is generation. Click any organism to inspect it below.</div>
+    </div>
+    <div class="panel tree-panel">
+      <div class="tree-legend" id="tree-legend"></div>
+      <div class="tree-scroll">
+        <svg id="lineage-tree"></svg>
+      </div>
+    </div>
+  </section>
+
+  <section class="detail-row">
+    <div class="panel detail-panel">
+      <h2 style="margin-bottom:16px;">Organism</h2>
+      <div id="detail-body"></div>
+    </div>
+    <div class="panel verify-panel">
+      <h2 style="margin-bottom:16px;">Verification</h2>
+      <div id="verify-body"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Genes<span class="n" id="genes-count"></span></h2>
+      <div class="caption">What is declared as variable. Everything an organism can differ in, mutation reaches by moving exactly one of these at a time (occasionally two or three).</div>
+    </div>
+    <div class="panel genes-panel">
+      <div class="genes-panel-inner">
+        <table class="genes-table">
+          <thead><tr><th>Gene</th><th>Type</th><th>Meaning</th></tr></thead>
+          <tbody id="genes-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="provenance" id="footer-provenance"></div>
+    <div class="links" id="footer-links"></div>
+  </footer>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.5/ethers.umd.min.js"></script>
+<script src="demo-data.js"></script>
+<script src="genome-space.js"></script>
+<script>
+"use strict";
+
+/* =========================================================================
+   Configuration. Point this at a deployed Germline contract to read a live
+   lineage; leave the address empty to run entirely from the recorded demo
+   lineage in demo-data.js. ?address=0x...&network=galileo in the URL
+   overrides this block for a single view without editing the file.
+   ========================================================================= */
+window.GERMLINE_CONFIG = {
+  address: "",
+  network: "zerog", // "zerog" (mainnet, chain 16661) or "galileo" (testnet, chain 16601)
+};
+
+const NETWORKS = {
+  zerog: { chainId: 16661, rpcUrl: "https://evmrpc.0g.ai", explorer: "https://chainscan.0g.ai", label: "0G Mainnet" },
+  galileo: { chainId: 16601, rpcUrl: "https://evmrpc-testnet.0g.ai", explorer: "https://chainscan-galileo.0g.ai", label: "0G Galileo Testnet" },
+};
+const RPC_TIMEOUT_MS = 9000;
+
+const GERMLINE_ABI = [
+  "function population() view returns (uint256)",
+  "function survivalThreshold() view returns (uint64)",
+  "function fecundityStep() view returns (uint64)",
+  "function baseFecundity() view returns (uint64)",
+  "function organismOf(uint256) view returns (tuple(uint256 parent, uint32 generation, uint32 offspring, uint64 bornAt, bytes32 genomeRoot, bytes32 mutationSeed, address steward, uint256 agenticId))",
+  "function fitnessOf(uint256) view returns (tuple(uint64 score, uint64 attestedAt, bytes32 trialId, bytes32 evidenceRoot, address attestor))",
+  "function spawnAllowance(uint256) view returns (uint256)",
+  "function remainingOffspring(uint256) view returns (uint256)",
+];
+
+/* =========================================================================
+   Genome logic, ported by hand from engine/genome.js and engine/mutate.js.
+   A page opened with a double click cannot require() a CommonJS module, so
+   this mirrors those two files line for line rather than reimplementing the
+   idea; engine/genome.js and engine/mutate.js remain the source of truth,
+   and this block exists only so a viewer can watch heredity get re-derived
+   in front of them instead of taking the word of a script's exit code.
+   ========================================================================= */
+const GENES = [
+  { key: "useColour", kind: "bool" },
+  { key: "useSize", kind: "bool" },
+  { key: "useRing", kind: "bool" },
+  { key: "useMomentum", kind: "bool" },
+  { key: "ringSides", kind: "mask4" },
+  { key: "minSupport", kind: "int", min: 1, max: 6 },
+  { key: "unanimousOnly", kind: "bool" },
+  { key: "backoff", kind: "bool" },
+];
+
+function canonicalGenome(genome) {
+  const ordered = { version: genome.version };
+  for (const gene of GENES) ordered[gene.key] = genome[gene.key];
+  return JSON.stringify(ordered);
+}
+function genomeRootOf(genome) {
+  return ethers.keccak256(ethers.toUtf8Bytes(canonicalGenome(genome)));
+}
+function phenotypeOf(genome) {
+  const parts = [];
+  if (genome.useColour) parts.push("colour");
+  if (genome.useSize) parts.push("size");
+  if (genome.useRing && genome.ringSides > 0) {
+    const sides = ["U", "D", "L", "R"].filter((_, i) => (genome.ringSides >> i) & 1);
+    parts.push("ring:" + sides.join(""));
+  }
+  if (genome.useMomentum) parts.push("momentum");
+  if (parts.length === 0) parts.push("action-only");
+  const caution = [];
+  if (genome.unanimousOnly) caution.push("unanimous");
+  if (genome.backoff) caution.push("backoff");
+  if (genome.minSupport > 1) caution.push("n>=" + genome.minSupport);
+  return parts.join("+") + (caution.length ? " [" + caution.join(",") + "]" : "");
+}
+
+function rngFrom(seedHex) {
+  const clean = seedHex.startsWith("0x") ? seedHex.slice(2) : seedHex;
+  if (clean.length < 32) throw new Error("seed too short to be a chain seed");
+  let x = parseInt(clean.slice(0, 8), 16) >>> 0;
+  let y = parseInt(clean.slice(8, 16), 16) >>> 0;
+  let z = parseInt(clean.slice(16, 24), 16) >>> 0;
+  let w = parseInt(clean.slice(24, 32), 16) >>> 0;
+  if ((x | y | z | w) === 0) x = 0x9e3779b9;
+  return function next() {
+    const t = x ^ (x << 11);
+    x = y; y = z; z = w;
+    w = (w ^ (w >>> 19) ^ (t ^ (t >>> 8))) >>> 0;
+    return w / 0x100000000;
+  };
+}
+function mutationCount(random) {
+  const roll = random();
+  if (roll < 0.7) return 1;
+  if (roll < 0.95) return 2;
+  return 3;
+}
+function mutateGene(genome, gene, random) {
+  const next = Object.assign({}, genome);
+  if (gene.kind === "bool") {
+    next[gene.key] = !genome[gene.key];
+  } else if (gene.kind === "mask4") {
+    const bit = Math.floor(random() * 4);
+    next[gene.key] = genome[gene.key] ^ (1 << bit);
+  } else if (gene.kind === "int") {
+    const step = random() < 0.5 ? -1 : 1;
+    let value = genome[gene.key] + step;
+    if (value < gene.min) value = gene.min + 1;
+    if (value > gene.max) value = gene.max - 1;
+    next[gene.key] = value;
+  }
+  return next;
+}
+function mutateGenome(parentGenome, seedHex) {
+  const random = rngFrom(seedHex);
+  let child = Object.assign({}, parentGenome);
+  const count = mutationCount(random);
+  const touched = new Set();
+  for (let i = 0; i < count; i++) {
+    let index = Math.floor(random() * GENES.length);
+    let guard = 0;
+    while (touched.has(index) && guard++ < GENES.length) index = (index + 1) % GENES.length;
+    touched.add(index);
+    child = mutateGene(child, GENES[index], random);
+  }
+  if (child.useRing && child.ringSides === 0) child.ringSides = 15;
+  if (!child.useRing) child.ringSides = 0;
+  return child;
+}
+
+/// Recover a full genome from a root using web/genome-space.js -- the table
+/// engine/space.js enumerates offline, keyed by every root mutate() can
+/// reach. The chain only ever stores the root; this is how a viewer resolves
+/// one back into a configuration without asking anyone to trust an index.
+function genomeFromRoot(root) {
+  const space = window.GERMLINE_GENOME_SPACE;
+  if (!space || !root) return null;
+  const row = space.byRoot[String(root).toLowerCase()];
+  if (!row) return null;
+  const genome = { version: 1 };
+  space.fields.forEach((key, i) => {
+    const gene = GENES.find((g) => g.key === key);
+    const raw = row[i + 1];
+    genome[key] = gene.kind === "bool" ? raw === 1 : raw;
+  });
+  return genome;
+}
+function genomeOf(org) {
+  return org.genome || genomeFromRoot(org.genomeRoot);
+}
+function diffGenomes(parentGenome, childGenome) {
+  return GENES.filter((g) => parentGenome[g.key] !== childGenome[g.key]).map((g) => ({
+    key: g.key, kind: g.kind, from: parentGenome[g.key], to: childGenome[g.key],
+  }));
+}
+function describeGeneValue(kind, value) {
+  if (kind === "bool") return value ? "on" : "off";
+  if (kind === "mask4") {
+    let s = "";
+    for (let b = 0; b < 4; b++) s += (value >> b) & 1 ? "UDLR"[b] : "·";
+    return s;
+  }
+  return String(value);
+}
+
+/* =========================================================================
+   Small DOM / SVG helpers. No framework: this has to open with a double
+   click and work, so the whole page is built with document.createElement
+   and textContent rather than a templating layer.
+   ========================================================================= */
+function h(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  if (attrs) {
+    for (const k of Object.keys(attrs)) {
+      const v = attrs[k];
+      if (v == null) continue;
+      if (k === "class") node.className = v;
+      else if (k === "text") node.textContent = v;
+      else if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2), v);
+      else node.setAttribute(k, v);
+    }
+  }
+  for (const c of children.flat()) {
+    if (c == null) continue;
+    node.appendChild(typeof c === "string" || typeof c === "number" ? document.createTextNode(String(c)) : c);
+  }
+  return node;
+}
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svg(tag, attrs, text) {
+  const node = document.createElementNS(SVG_NS, tag);
+  if (attrs) for (const k of Object.keys(attrs)) node.setAttribute(k, attrs[k]);
+  if (text != null) node.textContent = text;
+  return node;
+}
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+function shortHash(h, head = 8, tail = 6) {
+  if (!h) return "—";
+  return h.length <= head + tail + 3 ? h : h.slice(0, head) + "…" + h.slice(-tail);
+}
+function shortAddr(a) {
+  if (!a) return "—";
+  return a.slice(0, 6) + "…" + a.slice(-4);
+}
+function bpsPct(bps) {
+  return (bps / 100).toFixed(2) + "%";
+}
+function fmtTime(unixSeconds) {
+  if (!unixSeconds) return "—";
+  return new Date(unixSeconds * 1000).toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
+}
+async function copyText(str, btn) {
+  let ok = false;
+  try {
+    if (navigator.clipboard && window.isSecureContext !== false) {
+      await navigator.clipboard.writeText(str);
+      ok = true;
+    }
+  } catch (err) { ok = false; }
+  if (!ok) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = str;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+    } catch (err) { ok = false; }
+  }
+  if (btn) {
+    const original = btn.textContent;
+    btn.textContent = ok ? "copied" : "select + ⌘C";
+    btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = original; btn.classList.remove("copied"); }, 1400);
+  }
+}
+function withTimeout(promise, ms, label) {
+  let t;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(new Error((label || "request") + " timed out after " + ms + "ms")), ms);
+  });
+  return Promise.race([Promise.resolve(promise), timeout]).finally(() => clearTimeout(t));
+}
+class LiveError extends Error {
+  constructor(kind, message) { super(message); this.kind = kind; }
+}
+
+/* =========================================================================
+   Data loading. Two sources normalise to the same organism shape so every
+   renderer below is written once and works against either.
+   ========================================================================= */
+function loadDemo() {
+  const demo = window.GERMLINE_DEMO;
+  if (!demo) throw new Error("web/demo-data.js did not load; demo mode is unavailable");
+  const organisms = demo.organisms.map((o) => ({
+    id: o.id, parent: o.parent, generation: o.generation,
+    genome: o.genome, genomeRoot: o.genomeRoot,
+    phenotype: o.phenotype, mutationSeed: o.mutationSeed, seedOrdinal: o.seedOrdinal,
+    changed: o.changed, steward: null, agenticId: 0, bornAt: null,
+    offspring: o.offspring, allowance: o.allowance,
+    remaining: Math.max(o.allowance - o.offspring, 0),
+    attested: true, score: o.fitnessBps, coverage: o.coverage,
+    accuracyWhenAnswering: o.accuracyWhenAnswering,
+    trialId: o.trialId, evidenceRoot: o.evidenceRoot, attestor: null,
+    deadEnd: o.deadEnd, source: "demo",
+  }));
+  return {
+    organisms,
+    meta: {
+      survivalThreshold: demo.selection.survivalThreshold,
+      fecundityStep: demo.selection.fecundityStep,
+      baseFecundity: demo.selection.baseFecundity,
+      population: organisms.length,
+    },
+  };
+}
+
+async function loadLive(cfg) {
+  const provider = new ethers.JsonRpcProvider(cfg.rpcUrl, undefined, { staticNetwork: true });
+  let code;
+  try {
+    code = await withTimeout(provider.getCode(cfg.address), RPC_TIMEOUT_MS, "reaching " + cfg.rpcUrl);
+  } catch (err) {
+    throw new LiveError("unreachable", "Could not reach " + cfg.rpcUrl + " (" + (err && err.message ? err.message : String(err)) + ")");
+  }
+  if (code === "0x") {
+    throw new LiveError("not-deployed", "No contract code at " + cfg.address + " on " + cfg.network + ".");
+  }
+  const contract = new ethers.Contract(cfg.address, GERMLINE_ABI, provider);
+  let population, survivalThreshold, fecundityStep, baseFecundity;
+  try {
+    [population, survivalThreshold, fecundityStep, baseFecundity] = await withTimeout(
+      Promise.all([contract.population(), contract.survivalThreshold(), contract.fecundityStep(), contract.baseFecundity()]),
+      RPC_TIMEOUT_MS, "reading contract parameters"
+    );
+  } catch (err) {
+    throw new LiveError("not-deployed", "Address has code but does not answer as a Germline contract (" + (err && err.message ? err.message : String(err)) + ")");
+  }
+  const count = Number(population);
+  const meta = {
+    survivalThreshold: Number(survivalThreshold),
+    fecundityStep: Number(fecundityStep),
+    baseFecundity: Number(baseFecundity),
+    population: count,
+  };
+  if (count === 0) return { organisms: [], meta };
+
+  const ids = Array.from({ length: count }, (_, i) => i + 1);
+  let rows;
+  try {
+    rows = await withTimeout(Promise.all(ids.map(async (id) => {
+      const [organism, fitness, allowance, remaining] = await Promise.all([
+        contract.organismOf(id), contract.fitnessOf(id), contract.spawnAllowance(id), contract.remainingOffspring(id),
+      ]);
+      const genome = genomeFromRoot(organism.genomeRoot);
+      const attested = Number(fitness.attestedAt) > 0;
+      const isFounder = organism.parent === 0n;
+      return {
+        id, parent: Number(organism.parent), generation: Number(organism.generation),
+        genome, genomeRoot: organism.genomeRoot,
+        phenotype: genome ? phenotypeOf(genome) : null,
+        mutationSeed: isFounder ? null : organism.mutationSeed,
+        seedOrdinal: null, changed: null,
+        steward: organism.steward, agenticId: Number(organism.agenticId),
+        bornAt: Number(organism.bornAt),
+        offspring: Number(organism.offspring), allowance: Number(allowance), remaining: Number(remaining),
+        attested, score: attested ? Number(fitness.score) : null,
+        trialId: attested ? fitness.trialId : null,
+        evidenceRoot: attested ? fitness.evidenceRoot : null,
+        attestor: attested ? fitness.attestor : null,
+        deadEnd: attested && Number(allowance) === 0,
+        source: "chain",
+      };
+    })), RPC_TIMEOUT_MS * 3, "reading population");
+  } catch (err) {
+    throw new LiveError("unreachable", "Connected, but reading the population failed partway (" + (err && err.message ? err.message : String(err)) + ")");
+  }
+  return { organisms: rows, meta };
+}
+
+/* =========================================================================
+   Tree layout. A simple layered dendrogram: generation is the column,
+   siblings are grouped under their parent's row so edges mostly run
+   left-to-right without crossing. Good enough for a population that stays
+   legible on one screen, which is the only population this is for.
+   ========================================================================= */
+function computeTreeLayout(organisms) {
+  const colGap = 208, rowGap = 60, padX = 70, padY = 42;
+  const byGen = new Map();
+  let maxGen = 0;
+  for (const o of organisms) {
+    maxGen = Math.max(maxGen, o.generation);
+    if (!byGen.has(o.generation)) byGen.set(o.generation, []);
+    byGen.get(o.generation).push(o);
+  }
+  const rowById = new Map();
+  const gen0 = (byGen.get(0) || []).slice().sort((a, b) => a.id - b.id);
+  gen0.forEach((o, i) => rowById.set(o.id, i));
+  let maxRows = Math.max(1, gen0.length);
+  for (let g = 1; g <= maxGen; g++) {
+    const nodes = (byGen.get(g) || []).slice().sort((a, b) => {
+      const ra = rowById.has(a.parent) ? rowById.get(a.parent) : 0;
+      const rb = rowById.has(b.parent) ? rowById.get(b.parent) : 0;
+      return ra !== rb ? ra - rb : a.id - b.id;
+    });
+    nodes.forEach((o, i) => rowById.set(o.id, i));
+    maxRows = Math.max(maxRows, nodes.length);
+  }
+  const nodes = organisms.map((o) => ({
+    org: o,
+    x: padX + o.generation * colGap,
+    y: padY + (rowById.get(o.id) || 0) * rowGap,
+  }));
+  const byId = new Map(nodes.map((n) => [n.org.id, n]));
+  const edges = [];
+  for (const n of nodes) {
+    if (n.org.parent && byId.has(n.org.parent)) {
+      const p = byId.get(n.org.parent);
+      edges.push({ x1: p.x, y1: p.y, x2: n.x, y2: n.y, dead: n.org.deadEnd });
+    }
+  }
+  return {
+    nodes, edges, maxGen,
+    width: padX * 2 + maxGen * colGap,
+    height: padY * 2 + (maxRows - 1) * rowGap,
+  };
+}
+
+function renderTree(svgRoot, organisms, selectedId, bestId, onSelect) {
+  clear(svgRoot);
+  if (organisms.length === 0) return;
+  const layout = computeTreeLayout(organisms);
+  svgRoot.setAttribute("viewBox", "0 0 " + Math.max(layout.width, 200) + " " + Math.max(layout.height, 80));
+  svgRoot.setAttribute("width", Math.max(layout.width, 200));
+  svgRoot.setAttribute("height", Math.max(layout.height, 80));
+
+  const edgeLayer = svg("g");
+  for (const e of layout.edges) {
+    const mx = (e.x1 + e.x2) / 2;
+    const d = "M " + e.x1 + " " + e.y1 + " C " + mx + " " + e.y1 + ", " + mx + " " + e.y2 + ", " + e.x2 + " " + e.y2;
+    edgeLayer.appendChild(svg("path", { d, class: "edge-line" + (e.dead ? " dead" : "") }));
+  }
+  svgRoot.appendChild(edgeLayer);
+
+  const nodeLayer = svg("g");
+  for (const n of layout.nodes) {
+    const o = n.org;
+    const classes = ["node-group"];
+    if (o.id === selectedId) classes.push("selected");
+    if (o.id === bestId) classes.push("best");
+    if (o.deadEnd) classes.push("dead");
+    const group = svg("g", { class: classes.join(" "), transform: "translate(" + n.x + "," + n.y + ")" });
+    group.style.cursor = "pointer";
+    group.addEventListener("click", () => onSelect(o.id));
+    const r = o.id === bestId ? 15 : 12;
+    group.appendChild(svg("circle", { class: "node-circle", r }));
+    group.appendChild(svg("text", { class: "node-id", x: 0, y: 4, "text-anchor": "middle" }, "#" + o.id));
+    let label = o.phenotype || (o.attested === false ? "unattested" : "—");
+    if (label.length > 20) label = label.slice(0, 19) + "…";
+    group.appendChild(svg("text", { class: "node-label", x: 0, y: r + 15, "text-anchor": "middle" }, label));
+    if (o.score != null) {
+      group.appendChild(svg("text", { class: "node-label", x: 0, y: r + 28, "text-anchor": "middle" }, bpsPct(o.score)));
+    }
+    const title = svg("title", null,
+      "#" + o.id + "  " + (o.phenotype || "unattested") +
+      (o.score != null ? "  " + o.score + " bps (" + bpsPct(o.score) + ")" : "  not yet attested") +
+      (o.deadEnd ? "  — dead end" : "")
+    );
+    group.appendChild(title);
+    nodeLayer.appendChild(group);
+  }
+  svgRoot.appendChild(nodeLayer);
+}
+
+/* =========================================================================
+   Fitness chart. The one image the whole project rests on: it has to show
+   the climb from the founder to the measured peak at a glance, and it has
+   to be honest about the shape of the search rather than only the headline
+   number, so every scored organism is plotted, not only the winners.
+   ========================================================================= */
+function niceStep(raw) {
+  if (raw <= 0) return 50;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / pow;
+  let nice = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
+  return Math.max(25, nice * pow);
+}
+
+function renderFitnessChart(svgRoot, organisms, meta, selectedId, bestId, onSelect) {
+  clear(svgRoot);
+  const scored = organisms.filter((o) => o.score != null);
+  if (scored.length === 0) {
+    svgRoot.setAttribute("viewBox", "0 0 1100 220");
+    svgRoot.appendChild(svg("text", { x: 550, y: 110, "text-anchor": "middle", fill: "var(--text-faint)", "font-size": 13 },
+      "No attested fitness yet."));
+    return;
+  }
+  const maxGen = Math.max(0, ...organisms.map((o) => o.generation));
+  const values = scored.map((o) => o.score);
+  const rawMin = Math.min(...values, meta.survivalThreshold);
+  const rawMax = Math.max(...values);
+  const span = Math.max(rawMax - rawMin, 200);
+  const pad = span * 0.18;
+  const minV = Math.max(0, Math.floor((rawMin - pad) / 50) * 50);
+  const maxV = Math.min(10000, Math.ceil((rawMax + pad) / 50) * 50);
+
+  const W = 1100, H = 380, padL = 64, padR = 36, padT = 22, padB = 40;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const xFor = (gen) => padL + (maxGen === 0 ? plotW / 2 : (gen / maxGen) * plotW);
+  const yFor = (bps) => padT + plotH - ((bps - minV) / (maxV - minV)) * plotH;
+
+  svgRoot.setAttribute("viewBox", "0 0 " + W + " " + H);
+
+  const gridLayer = svg("g");
+  const step = niceStep((maxV - minV) / 5);
+  for (let v = Math.ceil(minV / step) * step; v <= maxV; v += step) {
+    const y = yFor(v);
+    gridLayer.appendChild(svg("line", { x1: padL, y1: y, x2: W - padR, y2: y, stroke: "var(--border-soft)", "stroke-width": 1 }));
+    gridLayer.appendChild(svg("text", { x: padL - 10, y: y + 4, "text-anchor": "end", fill: "var(--text-faint)", "font-size": 10.5, "font-family": "var(--mono)" }, v));
+  }
+  for (let g = 0; g <= maxGen; g++) {
+    const x = xFor(g);
+    gridLayer.appendChild(svg("text", { x, y: H - padB + 20, "text-anchor": "middle", fill: "var(--text-faint)", "font-size": 11 }, "gen " + g));
+  }
+  svgRoot.appendChild(gridLayer);
+
+  if (meta.survivalThreshold >= minV && meta.survivalThreshold <= maxV) {
+    const y = yFor(meta.survivalThreshold);
+    svgRoot.appendChild(svg("line", { x1: padL, y1: y, x2: W - padR, y2: y, stroke: "var(--text-faint)", "stroke-width": 1.2, "stroke-dasharray": "4 4" }));
+    svgRoot.appendChild(svg("text", { x: W - padR, y: y - 7, "text-anchor": "end", fill: "var(--text-faint)", "font-size": 11 },
+      "survival threshold · " + meta.survivalThreshold + " bps"));
+  }
+
+  const byId = new Map(scored.map((o) => [o.id, o]));
+  const edgeLayer = svg("g");
+  for (const o of scored) {
+    const p = byId.get(o.parent);
+    if (p) edgeLayer.appendChild(svg("line", { x1: xFor(p.generation), y1: yFor(p.score), x2: xFor(o.generation), y2: yFor(o.score), stroke: "var(--border)", "stroke-width": 1 }));
+  }
+  svgRoot.appendChild(edgeLayer);
+
+  // Frontier: the running best fitness by generation. This is the line that
+  // actually answers "did selection climb", independent of how many worse
+  // mutations were tried alongside it.
+  let running = -Infinity;
+  const frontier = [];
+  for (let g = 0; g <= maxGen; g++) {
+    const inGen = scored.filter((o) => o.generation === g);
+    for (const o of inGen) if (o.score > running) running = o.score;
+    if (running > -Infinity) frontier.push({ gen: g, value: running });
+  }
+  if (frontier.length > 1) {
+    const d = frontier.map((p, i) => (i === 0 ? "M " : "L ") + xFor(p.gen) + " " + yFor(p.value)).join(" ");
+    svgRoot.appendChild(svg("path", { d, fill: "none", stroke: "var(--accent)", "stroke-width": 2.5, opacity: 0.9 }));
+  }
+
+  const dotLayer = svg("g");
+  for (const o of scored) {
+    const isBest = o.id === bestId;
+    const isSel = o.id === selectedId;
+    const cx = xFor(o.generation), cy = yFor(o.score);
+    const g = svg("g", { style: "cursor:pointer" });
+    g.addEventListener("click", () => onSelect(o.id));
+    g.appendChild(svg("circle", {
+      cx, cy, r: isBest ? 7 : isSel ? 6 : 4,
+      fill: isBest || isSel ? "var(--accent)" : "var(--panel-2)",
+      stroke: isBest || isSel ? "var(--accent)" : "var(--border)",
+      "stroke-width": isSel && !isBest ? 2 : 1.4,
+    }));
+    g.appendChild(svg("title", null, "#" + o.id + "  " + o.phenotype + "  " + o.score + " bps (" + bpsPct(o.score) + ")"));
+    dotLayer.appendChild(g);
+  }
+  svgRoot.appendChild(dotLayer);
+
+  const founder = scored.find((o) => o.parent === 0) || scored[0];
+  const best = byId.get(bestId);
+  if (founder) {
+    const fx = xFor(founder.generation), fy = yFor(founder.score);
+    svgRoot.appendChild(svg("text", { x: fx, y: fy - 14, "text-anchor": "middle", fill: "var(--text-dim)", "font-size": 11.5 },
+      founder.phenotype + " · " + founder.score + " bps"));
+  }
+  if (best && best.id !== (founder && founder.id)) {
+    const bx = xFor(best.generation), by = yFor(best.score);
+    const anchor = bx > W - 220 ? "end" : "middle";
+    svgRoot.appendChild(svg("text", { x: bx, y: by - 16, "text-anchor": anchor, fill: "var(--accent)", "font-size": 12.5, "font-weight": 700 },
+      best.phenotype + " · " + best.score + " bps"));
+  }
+}
+
+/* =========================================================================
+   Application state and rendering.
+   ========================================================================= */
+const state = { organisms: [], meta: {}, selectedId: null, network: null, address: null, mode: "loading" };
+
+function bestOf(organisms) {
+  return organisms.reduce((a, b) => (b.score != null && (a == null || b.score > a.score) ? b : a), null);
+}
+
+function setModePill(kind, label) {
+  const pill = document.getElementById("mode-pill");
+  pill.className = "pill " + kind;
+  clear(pill);
+  pill.appendChild(h("span", { class: "dot" }));
+  pill.appendChild(document.createTextNode(label));
+}
+
+function showBanner(kind, node) {
+  const slot = document.getElementById("banner-slot");
+  clear(slot);
+  if (!node) return;
+  slot.appendChild(h("div", { class: "banner" + (kind === "warn" ? " warn" : "") }, node));
+}
+
+function renderTopbarStats() {
+  document.getElementById("stat-network").textContent = state.network ? state.network.label + " · " + state.network.chainId : "—";
+  const addrCell = document.getElementById("stat-address");
+  clear(addrCell);
+  if (state.address && state.network) {
+    addrCell.appendChild(h("a", { href: state.network.explorer + "/address/" + state.address, target: "_blank", rel: "noopener" }, shortAddr(state.address)));
+  } else {
+    addrCell.textContent = "not configured";
+  }
+  document.getElementById("stat-population").textContent = state.organisms.length ? String(state.organisms.length) : (state.mode === "loading" ? "—" : "0");
+}
+
+function selectOrganism(id) {
+  state.selectedId = id;
+  const best = bestOf(state.organisms);
+  renderTree(document.getElementById("lineage-tree"), state.organisms, state.selectedId, best ? best.id : null, selectOrganism);
+  renderFitnessChart(document.getElementById("fitness-chart"), state.organisms, state.meta, state.selectedId, best ? best.id : null, selectOrganism);
+  renderDetail();
+  renderVerification();
+}
+
+function renderDetail() {
+  const body = document.getElementById("detail-body");
+  clear(body);
+  const org = state.organisms.find((o) => o.id === state.selectedId);
+  if (!org) { body.appendChild(h("div", { class: "empty-selection" }, "Select an organism in the tree or the chart.")); return; }
+
+  const dl = h("dl", { class: "kv" });
+  const row = (label, valueNode) => { dl.appendChild(h("dt", null, label)); dl.appendChild(h("dd", null, valueNode)); };
+  row("ID", "#" + org.id + (org.parent ? "  (child of #" + org.parent + ")" : "  (founder)"));
+  row("Generation", String(org.generation));
+  row("Phenotype", h("span", { class: "phenotype" }, org.phenotype || "unresolved"));
+  if (org.score != null) {
+    row("Fitness", org.score + " bps  ·  " + bpsPct(org.score));
+  } else {
+    row("Fitness", h("span", { class: "dim" }, "not yet attested"));
+  }
+  if (org.coverage != null) row("Coverage", (org.coverage * 100).toFixed(1) + "% of contexts answered");
+  if (org.accuracyWhenAnswering != null) row("Accuracy when answering", (org.accuracyWhenAnswering * 100).toFixed(1) + "%");
+  row("Offspring", org.offspring + " used of " + org.allowance + " earned  (" + org.remaining + " remaining)");
+  if (org.steward) row("Steward", h("span", null, shortAddr(org.steward)));
+  if (org.bornAt) row("Born", fmtTime(org.bornAt));
+  row("Genome root", shortHash(org.genomeRoot, 10, 8));
+  body.appendChild(dl);
+
+  if (org.deadEnd) {
+    body.appendChild(h("div", { style: "margin-top:14px;" }, h("span", { class: "badge dead" }, "dead end — below survival threshold, no descendants earned")));
+  } else if (org.attested === false) {
+    body.appendChild(h("div", { style: "margin-top:14px;" }, h("span", { class: "badge neutral" }, "awaiting fitness attestation")));
+  } else if (org.remaining === 0 && org.allowance > 0) {
+    body.appendChild(h("div", { style: "margin-top:14px;" }, h("span", { class: "badge neutral" }, "viable — offspring budget spent")));
+  } else if (org.allowance > 0) {
+    body.appendChild(h("div", { style: "margin-top:14px;" }, h("span", { class: "badge ok" }, "viable — " + org.remaining + " offspring available")));
+  }
+}
+
+function renderVerification() {
+  const body = document.getElementById("verify-body");
+  clear(body);
+  const org = state.organisms.find((o) => o.id === state.selectedId);
+  if (!org) { body.appendChild(h("div", { class: "empty-selection" }, "Select an organism to see how its lineage is checked.")); return; }
+
+  if (!org.parent) {
+    body.appendChild(h("div", { class: "kv" },
+      h("dt", null, "Genome root"), h("dd", null, org.genomeRoot),
+      h("dt", null, "Ancestry"), h("dd", null, h("span", { class: "dim" }, "none — this is a founder, seeded directly by the curator"))
+    ));
+    return;
+  }
+
+  const parent = state.organisms.find((o) => o.id === org.parent);
+  const parentGenome = parent ? genomeOf(parent) : null;
+  const childGenomeKnown = genomeOf(org);
+
+  const step1 = h("div", { class: "verify-step" },
+    h("div", { class: "step-label" }, "1. Heredity"),
+  );
+  if (!parentGenome || !org.mutationSeed) {
+    step1.appendChild(h("div", { class: "caption" }, "Parent genome or mutation seed unavailable — cannot re-derive from here."));
+  } else {
+    let derived, derivedRoot, holds;
+    try {
+      derived = mutateGenome(parentGenome, org.mutationSeed);
+      derivedRoot = genomeRootOf(derived);
+      holds = derivedRoot.toLowerCase() === String(org.genomeRoot).toLowerCase();
+    } catch (err) {
+      step1.appendChild(h("div", { class: "caption" }, "Could not re-derive: " + err.message));
+      derived = null;
+    }
+    if (derived) {
+      const dl = h("dl", { class: "kv" });
+      dl.appendChild(h("dt", null, "Parent")); dl.appendChild(h("dd", { class: "phenotype" }, "#" + parent.id + "  " + (parent.phenotype || "—")));
+      dl.appendChild(h("dt", null, "Parent root")); dl.appendChild(h("dd", null, shortHash(parent.genomeRoot, 10, 8)));
+      dl.appendChild(h("dt", null, "Mutation seed")); dl.appendChild(h("dd", null, shortHash(org.mutationSeed, 10, 8)));
+      dl.appendChild(h("dt", null, "Derived child")); dl.appendChild(h("dd", { class: "phenotype" }, phenotypeOf(derived)));
+      dl.appendChild(h("dt", null, "Derived root")); dl.appendChild(h("dd", null, shortHash(derivedRoot, 10, 8)));
+      dl.appendChild(h("dt", null, "On-chain root")); dl.appendChild(h("dd", null, shortHash(org.genomeRoot, 10, 8)));
+      step1.appendChild(dl);
+      step1.appendChild(h("div", { style: "margin-top:10px;" }, h("span", { class: "badge " + (holds ? "ok" : "dead") }, holds ? "heredity verified" : "forged")));
+
+      const changed = org.changed || (parentGenome ? diffGenomes(parentGenome, derived) : []);
+      if (changed && changed.length) {
+        const list = h("ul", { class: "changed-list" });
+        for (const c of changed) {
+          list.appendChild(h("li", null,
+            h("span", { class: "gene" }, c.key),
+            h("span", { class: "from" }, describeGeneValue(c.kind || (GENES.find(g=>g.key===c.key)||{}).kind, c.from)),
+            h("span", { class: "arrow" }, "→"),
+            h("span", { class: "to" }, describeGeneValue(c.kind || (GENES.find(g=>g.key===c.key)||{}).kind, c.to)),
+          ));
+        }
+        step1.appendChild(h("div", { style: "margin-top:10px;" }, list));
+      }
+    }
+  }
+  body.appendChild(step1);
+
+  const networkName = state.network ? state.network.name : (window.GERMLINE_CONFIG.network || "zerog");
+  const cmd = "CHILD_ID=" + org.id + " npx hardhat run scripts/verify.js --network " + networkName;
+  const step2 = h("div", { class: "verify-step" },
+    h("div", { class: "step-label" }, "2. Re-derive it yourself"),
+    h("div", { class: "caption" }, "Reads the lineage from the chain independently of this page, recovers the parent configuration from its root, re-runs the mutation the chain seeded, and compares. Also checks the seed against the committed block hash and the attested score against a fresh evaluation."),
+  );
+  const block = h("div", { class: "code-block" }, h("span", { class: "txt" }, cmd));
+  const btn = h("button", { class: "copy-btn", text: "copy" });
+  btn.addEventListener("click", () => copyText(cmd, btn));
+  block.appendChild(btn);
+  step2.appendChild(block);
+  body.appendChild(step2);
+
+  if (org.evidenceRoot) {
+    const step3 = h("div", { class: "verify-step" },
+      h("div", { class: "step-label" }, "3. Attested evidence"),
+      h("dl", { class: "kv" },
+        h("dt", null, "Trial"), h("dd", null, shortHash(org.trialId, 10, 6)),
+        h("dt", null, "Evidence root"), h("dd", null, shortHash(org.evidenceRoot, 10, 8)),
+        h("dt", null, "Attestor"), h("dd", null, org.attestor ? shortAddr(org.attestor) : h("span", { class: "dim" }, "simulated"))
+      )
+    );
+    body.appendChild(step3);
+  }
+}
+
+function renderGenesTable() {
+  const demo = window.GERMLINE_DEMO;
+  const genesBody = document.getElementById("genes-body");
+  clear(genesBody);
+  const list = (demo && demo.genes) || [];
+  document.getElementById("genes-count").textContent = list.length ? "(" + list.length + ")" : "";
+  for (const g of list) {
+    const kind = g.kind === "bool" ? "toggle" : g.kind === "mask4" ? "4-bit mask" : "integer " + g.range[0] + "–" + g.range[1];
+    genesBody.appendChild(h("tr", null,
+      h("td", { class: "gene-key" }, g.key),
+      h("td", { class: "gene-kind" }, kind),
+      h("td", { class: "gene-summary" }, g.summary)
+    ));
+  }
+}
+
+function renderSelectionStrip() {
+  const strip = document.getElementById("selection-strip");
+  clear(strip);
+  const m = state.meta;
+  if (m.survivalThreshold == null) return;
+  const item = (num, desc) => h("div", { class: "item" }, h("div", { class: "num" }, num), h("div", { class: "desc" }, desc));
+  strip.appendChild(item(m.survivalThreshold + " bps", "survival threshold — below this, an organism is barren"));
+  strip.appendChild(item("+1 per " + m.fecundityStep, "additional child for every " + m.fecundityStep + " bps above the threshold"));
+  strip.appendChild(item(String(m.baseFecundity), "offspring a merely-viable organism still earns"));
+}
+
+function renderTreeLegend() {
+  const legend = document.getElementById("tree-legend");
+  clear(legend);
+  const item = (swatchStyle, label) => h("div", { class: "item" }, h("span", { class: "legend-swatch", style: swatchStyle }), label);
+  legend.appendChild(item("background:var(--accent-glow);border:2px solid var(--accent);", "measured peak"));
+  legend.appendChild(item("background:#1c1710;border:2px solid var(--accent);", "selected"));
+  legend.appendChild(item("background:var(--panel-2);border:1.5px dashed var(--border);", "dead end — earned no offspring"));
+  legend.appendChild(item("background:var(--panel-2);border:1.5px solid var(--border);", "viable"));
+}
+
+function renderFooter() {
+  const demo = window.GERMLINE_DEMO;
+  const prov = document.getElementById("footer-provenance");
+  const links = document.getElementById("footer-links");
+  clear(prov); clear(links);
+  if (state.mode === "live") {
+    prov.textContent = "Live lineage read directly from " + state.address + " on " + (state.network ? state.network.label : "an unnamed network") + ". Every figure above comes from the chain at load time; nothing here is cached or invented.";
+  } else {
+    prov.textContent = (demo && demo.provenance) || "Simulated lineage, not read from a chain.";
+  }
+  const net = state.network || NETWORKS[window.GERMLINE_CONFIG.network] || NETWORKS.zerog;
+  links.appendChild(h("a", { href: net.explorer, target: "_blank", rel: "noopener" }, net.label + " explorer"));
+  links.appendChild(document.createTextNode("  ·  "));
+  links.appendChild(h("a", { href: "https://evmrpc.0g.ai", target: "_blank", rel: "noopener" }, "0G RPC"));
+  if (demo && demo.founderRoot) {
+    links.appendChild(document.createTextNode("  ·  founder root " + shortHash(demo.founderRoot, 8, 6)));
+  }
+}
+
+function renderChartCaption() {
+  const caption = document.getElementById("chart-caption");
+  clear(caption);
+  const scored = state.organisms.filter((o) => o.score != null);
+  if (scored.length === 0) return;
+  const best = bestOf(state.organisms);
+  const founder = scored.find((o) => o.parent === 0) || scored[0];
+  const complexParents = scored.filter((o) => o.genome && [o.genome.useColour, o.genome.useSize, o.genome.useRing, o.genome.useMomentum].every(Boolean));
+  let insight = null;
+  if (best && complexParents.length) {
+    const mostComplex = complexParents.reduce((a, b) => (b.score > a.score ? b : a));
+    if (mostComplex.id !== best.id && mostComplex.score < best.score) {
+      insight = document.createTextNode(
+        "Reading every feature (" + mostComplex.phenotype + ") scores " + bpsPct(mostComplex.score) +
+        "; " + best.phenotype + " alone reaches " + bpsPct(best.score) + ". More signal is not free — it costs coverage."
+      );
+    }
+  }
+  if (!insight && best && founder) {
+    insight = document.createTextNode(
+      "Founder (" + founder.phenotype + ") scores " + bpsPct(founder.score) + "; the measured peak is " +
+      best.phenotype + " at " + bpsPct(best.score) + "."
+    );
+  }
+  if (insight) caption.appendChild(h("span", null, insight));
+}
+
+function renderAll() {
+  renderTopbarStats();
+  renderSelectionStrip();
+  renderTreeLegend();
+  document.getElementById("lineage-count").textContent = state.organisms.length ? "(" + state.organisms.length + ")" : "";
+  renderChartCaption();
+  const best = bestOf(state.organisms);
+  if (state.selectedId == null && best) state.selectedId = best.id;
+  renderTree(document.getElementById("lineage-tree"), state.organisms, state.selectedId, best ? best.id : null, selectOrganism);
+  renderFitnessChart(document.getElementById("fitness-chart"), state.organisms, state.meta, state.selectedId, best ? best.id : null, selectOrganism);
+  renderDetail();
+  renderVerification();
+  renderFooter();
+  if (state.organisms.length === 0) {
+    document.getElementById("lineage-tree").parentElement.insertAdjacentElement("afterbegin",
+      h("div", { class: "tree-empty" }, state.mode === "live" ? "No organisms yet. Seed a founder to begin." : "No lineage to show."));
+  }
+}
+
+function applyDemo(bannerNode, bannerKind) {
+  const { organisms, meta } = loadDemo();
+  state.organisms = organisms; state.meta = meta; state.mode = "demo"; state.selectedId = null;
+  state.network = null; state.address = null;
+  setModePill("demo", "demo lineage");
+  if (bannerNode) showBanner(bannerKind, bannerNode); else showBanner(null, null);
+  renderGenesTable();
+  renderAll();
+}
+
+async function boot() {
+  renderGenesTable();
+  const params = new URLSearchParams(location.search);
+  const cfgAddress = (params.get("address") || window.GERMLINE_CONFIG.address || "").trim();
+  const networkName = (params.get("network") || window.GERMLINE_CONFIG.network || "zerog").trim();
+  const net = NETWORKS[networkName] || NETWORKS.zerog;
+  const rpcUrl = params.get("rpc") || net.rpcUrl;
+
+  if (!cfgAddress) {
+    applyDemo(
+      h("div", null,
+        h("div", null, "No contract address is configured — showing the recorded demo lineage."),
+        h("div", { style: "color:var(--text-faint);margin-top:2px;" }, "Set GERMLINE_CONFIG.address at the top of this file, or open this page with ?address=0x… to read a live deployment.")
+      ),
+      null
+    );
+    return;
+  }
+  if (!ethers.isAddress(cfgAddress)) {
+    applyDemo(
+      h("div", null, h("b", null, cfgAddress), " is not a valid address — showing the recorded demo lineage instead."),
+      "warn"
+    );
+    return;
+  }
+
+  setModePill("wait", "connecting");
+  state.network = { ...net, name: networkName };
+  state.address = cfgAddress;
+  renderTopbarStats();
+
+  try {
+    const { organisms, meta } = await loadLive({ address: cfgAddress, rpcUrl, network: networkName });
+    state.organisms = organisms; state.meta = meta; state.selectedId = null;
+    if (organisms.length === 0) {
+      state.mode = "live-empty";
+      setModePill("live", "live · empty");
+      showBanner(null, null);
+    } else {
+      state.mode = "live";
+      setModePill("live", "live");
+      showBanner(null, null);
+    }
+    renderAll();
+  } catch (err) {
+    const kind = err instanceof LiveError ? err.kind : "unreachable";
+    const label = kind === "not-deployed" ? "not deployed" : "unreachable";
+    setModePill("bad", label);
+    const isFileProtocol = location.protocol === "file:";
+    const retry = h("button", { text: "retry" });
+    retry.addEventListener("click", () => boot());
+    showBanner("warn", h("div", { style: "flex:1;" },
+      h("div", null,
+        kind === "not-deployed"
+          ? h("span", null, "No contract found at ", h("b", null, cfgAddress), " on ", state.network.label, ".")
+          : h("span", null, "Could not reach ", h("b", null, state.network.label), " at ", h("code", null, rpcUrl), ".")
+      ),
+      h("div", { style: "color:var(--text-faint);margin-top:2px;" }, err.message),
+      isFileProtocol
+        ? h("div", { style: "color:var(--text-faint);margin-top:6px;" }, "This page was opened as a local file. Some browsers block outbound RPC requests from file:// pages; serving this folder (for example npx serve web) enables live mode. Demo mode below always works from a local file.")
+        : null,
+      h("div", { class: "banner-actions", style: "margin-top:10px;" }, retry)
+    ));
+    applyDemo(null, null);
+    // Re-show the connection banner above the demo content; applyDemo clears
+    // it when it falls back on its own (no-address case), so it is set again
+    // here for the "we tried and failed" case specifically.
+    setModePill("bad", label);
+  }
+}
+
+boot();
+</script>
