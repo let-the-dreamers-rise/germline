@@ -1,0 +1,116 @@
+<meta charset="utf-8" />
+<title>Germline in twenty seconds</title>
+<style>
+  :root {
+    --bg: #0a0b0d; --ink: #e6e8ec; --dim: #7d838f;
+    --accent: #e8913a; --line: #23262d; --good: #4ea87a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.5 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+    display: grid; place-items: center; min-height: 100vh; overflow: hidden; }
+  .stage { width: min(96vw, 168vh); aspect-ratio: 16 / 9; position: relative;
+    padding: 5.8% 6.6%; display: grid; place-items: center;
+    container-type: inline-size; }
+  .scene { position: absolute; inset: 56px 64px; display: grid; place-content: center;
+    justify-items: start; opacity: 0; }
+  h1 { font-size: clamp(24px, 4.8cqw, 52px); line-height: 1.15; margin: 0 0 18px; font-weight: 650;
+    letter-spacing: -.02em; max-width: 20ch; }
+  h1 em { font-style: normal; color: var(--accent); }
+  p { font-size: clamp(13px, 2.2cqw, 23px); color: var(--dim); margin: 0; max-width: 34ch; }
+  .knobs { display: grid; grid-template-columns: repeat(10, 1fr); gap: 1.2cqw;
+    margin: 3cqw 0 0; width: 54cqw; }
+  .knob { height: 2.7cqw; min-height: 12px; border-radius: 5px; background: #1a1d22; border: 1px solid var(--line); }
+  .knob.on { background: var(--accent); border-color: var(--accent); }
+  .big { font-size: clamp(38px, 9.2cqw, 96px); font-weight: 680; letter-spacing: -.03em;
+    font-variant-numeric: tabular-nums; margin: 10px 0 6px; }
+  .bar { width: 54cqw; height: 1cqw; min-height: 6px; background: #16181d; border-radius: 5px;
+    margin-top: 26px; overflow: hidden; }
+  .fill { height: 100%; width: 0; background: var(--accent); border-radius: 5px; }
+  .stamp { display: inline-flex; align-items: center; gap: 12px; margin-top: 24px;
+    border: 1px solid var(--good); color: var(--good); border-radius: 7px;
+    padding: 1.1cqw 1.9cqw; font: 600 clamp(11px,1.8cqw,19px) ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .04em; }
+  .mono { font: clamp(10px,1.6cqw,16px)/1.9 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--dim); margin-top: 20px; }
+  .mono b { color: var(--ink); font-weight: 500; }
+  .wm { position: absolute; left: 64px; bottom: 34px; font-size: 13px;
+    letter-spacing: .16em; text-transform: uppercase; color: #4a4f59; }
+  .replay { position: absolute; right: 26px; bottom: 24px; background: none;
+    border: 1px solid var(--line); color: var(--dim); border-radius: 6px;
+    padding: 7px 13px; font-size: 12px; cursor: pointer; }
+
+  /* Each scene is on screen for four seconds of a twenty second loop. */
+  .run .scene { animation: show 20s linear forwards; }
+  .run .s1 { animation-delay: 0s }   .run .s2 { animation-delay: 4s }
+  .run .s3 { animation-delay: 8s }   .run .s4 { animation-delay: 12s }
+  .run .s5 { animation-delay: 16s }
+  @keyframes show {
+    0%   { opacity: 0; transform: translateY(9px); }
+    1.6% { opacity: 1; transform: none; }
+    18%  { opacity: 1; transform: none; }
+    20%  { opacity: 0; transform: translateY(-9px); }
+    100% { opacity: 0; }
+  }
+  .run .s2 .knob.on { animation: light .5s ease both; }
+  .run .s2 .knob.on:nth-child(1) { animation-delay: 4.5s }
+  .run .s2 .knob.on:nth-child(2) { animation-delay: 4.8s }
+  .run .s2 .knob.on:nth-child(3) { animation-delay: 5.1s }
+  @keyframes light { from { background: #1a1d22; border-color: var(--line) }
+                     to   { background: var(--accent); border-color: var(--accent) } }
+  .run .fill { animation: grow 2.4s cubic-bezier(.3,.8,.3,1) 12.7s both; }
+  @keyframes grow { from { width: 34% } to { width: 89% } }
+  .run .count { animation: none; }
+</style>
+
+<div class="stage run" id="stage">
+
+  <div class="scene s1">
+    <h1>Your agent has <em>twenty settings</em>.</h1>
+    <div class="knobs">
+      <div class="knob"></div><div class="knob"></div><div class="knob"></div>
+      <div class="knob"></div><div class="knob"></div><div class="knob"></div>
+      <div class="knob"></div><div class="knob"></div><div class="knob"></div>
+      <div class="knob"></div><div class="knob"></div><div class="knob"></div>
+      <div class="knob"></div><div class="knob"></div><div class="knob"></div>
+      <div class="knob"></div><div class="knob"></div><div class="knob"></div>
+      <div class="knob"></div><div class="knob"></div>
+    </div>
+  </div>
+
+  <div class="scene s2">
+    <h1>You tuned <em>three</em> of them.</h1>
+    <div class="knobs">
+      <div class="knob on"></div><div class="knob on"></div><div class="knob on"></div>
+      <div class="knob"></div><div class="knob"></div><div class="knob"></div>
+      <div class="knob"></div><div class="knob"></div><div class="knob"></div>
+      <div class="knob"></div><div class="knob"></div><div class="knob"></div>
+      <div class="knob"></div><div class="knob"></div><div class="knob"></div>
+      <div class="knob"></div><div class="knob"></div><div class="knob"></div>
+      <div class="knob"></div><div class="knob"></div>
+    </div>
+    <p style="margin-top:22px">A/B testing collapses past three. So you shipped the first one that worked.</p>
+  </div>
+
+  <div class="scene s3">
+    <p>The rest of the space you never looked at:</p>
+    <div class="big">3,486,784,401</div>
+    <p>combinations, untested.</p>
+  </div>
+
+  <div class="scene s4">
+    <h1>Germline turns <em>the rest</em>.</h1>
+    <p>Using the eval you already have.</p>
+    <div class="bar"><div class="fill"></div></div>
+    <div class="mono">score <b>3148</b> &rarr; <b>4765</b> &nbsp; on a real agent's world model</div>
+  </div>
+
+  <div class="scene s5">
+    <h1>And proves <em>how it got there</em>.</h1>
+    <div class="stamp">VERDICT: GENUINE</div>
+    <div class="mono">every step recorded on <b>0G mainnet</b><br />re-derive it yourself &mdash; a forged lineage fails arithmetic</div>
+  </div>
+
+  <div class="wm">Germline</div>
+  <button class="replay" onclick="const s=document.getElementById('stage');s.classList.remove('run');void s.offsetWidth;s.classList.add('run')">replay</button>
+</div>
