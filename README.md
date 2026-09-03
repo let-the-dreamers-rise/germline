@@ -238,11 +238,36 @@ Agentic ID rather than replacing the standard.
 
 ## Quickstart
 
+Use it in your own project:
+
+```bash
+npm install github:<your-org>/germline
+```
+
+```js
+const { defineTrial, search } = require("germline");
+
+const trial = defineTrial({
+  name: "my-agent",
+  genes: { depth: { type: "int", min: 1, max: 20 }, rerank: { type: "bool" } },
+  evaluate: async (config) => ({ score: await runEvalSet(config) }),
+});
+
+const run = await search(trial, { budget: 40 });
+run.best.config       // the configuration to ship
+run.verdict.winner    // 'search' | 'random' | 'tied'  -- run it before you trust it
+```
+
+Or work on it directly:
+
 ```bash
 npm install
-npx hardhat test                      # 45 tests
-node examples/prompt-config.js        # tune a RAG agent, no chain needed
-node examples/pricing-rules.js        # tune pricing rules, no model needed
+npm test                  # 45 tests
+npm run bench             # the search against its random control
+npm run example:rag       # tune a RAG agent, no chain needed
+npm run example:pricing   # tune pricing rules, no model needed
+npm run check:storage     # prove the 0G Storage gateway is live
+npm run check:compute     # prove the 0G Compute router is live
 ```
 
 To put a lineage on 0G mainnet:
