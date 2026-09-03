@@ -9,6 +9,22 @@
 // and confirm the child that was actually born is the child that should have
 // been.
 
+// KNOWN LIMITATION, DELIBERATELY NOT FIXED. About 8.5% of seeds applied to a
+// genome with useRing=false produce that genome unchanged: the chosen mutation
+// flips a ringSides bit, and the coherence rule below resets ringSides to 0
+// because the ring is off. The child equals the parent, and the contract
+// correctly refuses to mint a duplicate, so the commitment is wasted.
+//
+// The obvious fix is to skip ringSides when useRing is false. It cannot be
+// applied. Every organism already on chain was derived under THIS function,
+// and verify.js re-runs it to check heredity; a changed derivation would make
+// genuine children fail as forged. The mutation function is part of the
+// lineage's identity and froze when the first organism was minted. A fixed
+// operator belongs in a new trial with a new genome version, not here.
+//
+// The cost is one spent commitment per no-op seed, and breed.js reports it
+// plainly and tells the operator to try again.
+
 const { GENES, validate } = require("./genome");
 
 // A small deterministic PRNG. xorshift128 seeded from the 32-byte chain seed;

@@ -74,7 +74,7 @@ Point judges at three things, in this order:
 
 1. The contract on the explorer, showing real transactions: deployment,
    `Founded`, `SpawnRequested`, `Spawned` and `FitnessAttested` events.
-2. `CHILD_ID=n npx hardhat run scripts/verify.js --network zerog`, which reads
+2. `npx hardhat run scripts/verify.js --network zerog`, which reads
    the lineage from chain and re-derives it locally.
 3. `docs/STORAGE.md`, which states exactly what runs against 0G Storage and
    what falls back.
@@ -144,7 +144,7 @@ Run `scripts/breed.js`. Narrate the two steps while they happen.
 Show the transactions landing on chainscan.
 
 **1:40-2:20 -- verification, and this is the moment that matters.**
-Run `CHILD_ID=n npx hardhat run scripts/verify.js --network zerog`.
+Run `npx hardhat run scripts/verify.js --network zerog`.
 
 > "Anyone with the parent config can re-run the mutation and check it against
 > what the chain recorded."
@@ -183,7 +183,7 @@ In execution order.
       `deployments/zerog.json`. **Copy the address.**
 - [ ] `npx hardhat run scripts/found.js --network zerog`
 - [ ] `npx hardhat run scripts/breed.js --network zerog`, several times
-- [ ] `CHILD_ID=2 npx hardhat run scripts/verify.js --network zerog`
+- [ ] `npx hardhat run scripts/verify.js --network zerog` -- checks the newest bred organism
 - [ ] `npx hardhat run scripts/status.js --network zerog`
 - [ ] Paste the contract address into `web/index.html`, open it, screenshot
       the lineage and fitness chart

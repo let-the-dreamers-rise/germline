@@ -116,7 +116,7 @@ async function main() {
   await say("  Next, in the terminal, run these two commands:");
   await say("");
   await say("    npx hardhat run scripts/status.js --network zerog");
-  await say("    CHILD_ID=2 npx hardhat run scripts/verify.js --network zerog");
+  await say("    npx hardhat run scripts/verify.js --network zerog");
   await say("");
   await say("  The second one re-derives the child from its parent and the", 900);
   await say("  on-chain seed, and prints VERDICT: GENUINE.", 1400);

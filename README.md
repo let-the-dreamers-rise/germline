@@ -152,8 +152,11 @@ Anyone holding the parent configuration can re-run the mutation offline and
 compare against the child root stored on chain:
 
 ```
-CHILD_ID=7 npx hardhat run scripts/verify.js --network zerog
+npx hardhat run scripts/verify.js --network zerog
 ```
+
+With no `CHILD_ID` it checks the newest bred organism. Set one to check a
+specific lineage (`$env:CHILD_ID=7;` on PowerShell, `CHILD_ID=7` on bash).
 
 A forged lineage fails arithmetic rather than failing to be believed. There is
 a test for exactly this: `test/lifecycle.test.js` breeds an honest child, has
@@ -329,7 +332,7 @@ npx hardhat run scripts/preflight.js --network zerog    # costs nothing
 npx hardhat run scripts/deploy.js    --network zerog
 npx hardhat run scripts/found.js     --network zerog
 npx hardhat run scripts/breed.js     --network zerog
-CHILD_ID=2 npx hardhat run scripts/verify.js --network zerog
+npx hardhat run scripts/verify.js --network zerog
 npx hardhat run scripts/status.js    --network zerog
 ```
 
@@ -353,6 +356,13 @@ part behind the boring part.
 
 Stated plainly, because the edges matter more than the pitch.
 
+- **About 8.5% of seeds waste a commitment.** On a genome with the ring off,
+  a mutation that flips a ring side is undone by the coherence rule and the
+  child comes out identical to its parent; the contract refuses the
+  duplicate. Measured over 5,000 seeds. The fix is obvious and cannot be
+  applied: every on-chain organism was derived under the current function,
+  and changing it would make genuine children verify as forged. `breed.js`
+  reports it and says to try again. See `engine/mutate.js`.
 - **The curator role is centralised.** Founding organisms and appointing
   attestors currently sit with one address. Decentralising attestation is the
   obvious next step and is not done.

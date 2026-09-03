@@ -8,7 +8,15 @@
 // mutation the chain itself seeded, and compares. A forged child fails
 // arithmetic, not an audit.
 //
-//     CHILD_ID=7 npx hardhat run scripts/verify.js --network zerog
+//     npx hardhat run scripts/verify.js --network zerog
+//
+// With no CHILD_ID it checks the newest organism that has a parent, which is
+// what a demo wants and what a shell-neutral command requires -- VAR=value
+// prefixes are bash-only and fail on PowerShell and cmd. Set CHILD_ID to
+// check a specific one:
+//
+//     $env:CHILD_ID=7; npx hardhat run scripts/verify.js --network zerog   (PowerShell)
+//     CHILD_ID=7 npx hardhat run scripts/verify.js --network zerog         (bash)
 //
 // CONTRACT overrides the address in deployments/<network>.json, for checking
 // a lineage this working copy did not deploy. Exits non-zero if the child's
@@ -67,16 +75,30 @@ async function resolveContract(hre) {
 /// a caller that wants a non-zero exit code needs to do nothing further.
 async function verify(options = {}) {
   const log = options.log || console.log;
-  const childId =
-    options.childId != null ? String(options.childId) : process.env.CHILD_ID;
-  if (!childId) {
-    throw new Error(
-      "set CHILD_ID to the organism you want checked, or pass { childId } to verify()"
-    );
-  }
-
   const { address } = await resolveContract(hre);
   const germline = await hre.ethers.getContractAt("Germline", address);
+
+  let childId =
+    options.childId != null ? String(options.childId) : process.env.CHILD_ID;
+  if (!childId) {
+    // Default to the newest organism that descends from something. A founder
+    // has no heredity to verify, so walk back past any that sit on top.
+    const population = Number(await germline.population());
+    for (let id = population; id >= 1; id--) {
+      const organism = await germline.organismOf(id);
+      if (Number(organism.parent) !== 0) {
+        childId = String(id);
+        break;
+      }
+    }
+    if (!childId) {
+      throw new Error(
+        "no organism has a parent yet; run scripts/breed.js first, or set CHILD_ID"
+      );
+    }
+    log("CHILD_ID not set; checking the newest bred organism, #" + childId);
+    log("");
+  }
 
   const child = await germline.organismOf(childId);
   if (child.parent === 0n) {

@@ -9,7 +9,8 @@ asks you to fake anything.
    watch these in a small player; unreadable text is a wasted shot.
 2. **Clear the terminal** and `cd` into the repo:
    `cd "C:\Users\ASHWIN GOYAL\germline"`
-3. **Rehearse once** with `PACE=fast npm run demo` so nothing surprises you.
+3. **Rehearse once** so nothing surprises you. PowerShell:
+   `$env:PACE="fast"; npm run demo` -- Command Prompt: `set PACE=fast && npm run demo`
 4. **Open two windows** and nothing else: the terminal, and a browser with two
    tabs -- `web/explainer.html` and the viewer at
    `https://germline-demo.netlify.app/`
@@ -83,7 +84,7 @@ Ten organisms, two generations, fitness climbing from 3148.
 
 Then run:
 
-    CHILD_ID=2 npx hardhat run scripts/verify.js --network zerog
+    npx hardhat run scripts/verify.js --network zerog
 
 **Say while it runs:**
 
@@ -134,7 +135,8 @@ Stop recording.
 
 ## If something goes wrong on camera
 
-- **verify.js errors:** you probably used a CHILD_ID that does not exist. Run
+- **verify.js errors:** with no CHILD_ID it picks the newest bred organism
+  automatically, so this should not happen. If you set one by hand, run
   `status.js` first and pick any id with a parent.
 - **RPC hangs:** re-run. 0G mainnet occasionally takes a few seconds.
 - **The verdict says the search won:** even better. Say so, and mention it
