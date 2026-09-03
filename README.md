@@ -182,6 +182,21 @@ An object's identity is the keccak256 of its canonical JSON, computed locally,
 so verification never depends on any network being reachable. `docs/STORAGE.md`
 records every probe and its response.
 
+**0G Compute** scores the trials that arithmetic cannot. Whether a summary
+kept the facts or a support answer was correct is a judgement, and judgement
+is what an eval harness actually spends its money on. `lib/compute.js` talks
+to the Compute Router at `https://router-api.0g.ai/v1`, which is
+OpenAI-compatible and serves 32 models including 0G Foundation's own
+`0gm-1.0-35b-a3b`. `makeJudge()` turns that into a drop-in `evaluate()`; see
+`examples/llm-judge.js` and prove the router is live with
+`node scripts/compute-check.js`.
+
+Compute deliberately sits inside `evaluate()` and not inside `mutate()`. The
+obvious idea is to have a model propose the next mutation, and it is the wrong
+one: a child must be re-derivable from its parent and the on-chain seed, and a
+model's output is not reproducible. Fitness may be measured by a model.
+Heredity may not be invented by one.
+
 **Agentic ID (ERC-7857)** is what made this possible to think about: it gives
 an agent an identity and a `clone()` primitive, which is reproduction in all
 but name. Germline supplies the two things that turn copying into evolution.
