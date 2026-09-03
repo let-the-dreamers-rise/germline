@@ -251,6 +251,92 @@
 
   <div id="banner-slot"></div>
 
+  <style>
+    .hero { margin: 4px 0 34px; }
+    .hero .lede { font-size: 21px; line-height: 1.5; max-width: 64ch; margin: 0 0 14px; }
+    .hero .lede strong { color: var(--accent); font-weight: 600; }
+    .hero .sub { color: var(--text-faint); max-width: 68ch; line-height: 1.65; margin: 0 0 24px; }
+    .hero-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; }
+    .hero-card { border: 1px solid var(--line, #23262d); border-radius: 8px; padding: 16px 18px; background: rgba(255,255,255,.015); }
+    .hero-card h3 { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--text-faint); margin: 0 0 11px; font-weight: 600; }
+    .hero-card p { margin: 0 0 9px; line-height: 1.6; color: var(--text-faint); font-size: 13px; }
+    .hero-card p:last-child { margin-bottom: 0; }
+    .hero pre { margin: 0; font-size: 12px; line-height: 1.7; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .hero pre .k { color: var(--accent); }
+    .hero pre .c { color: var(--text-faint); }
+    .bench { width: 100%; border-collapse: collapse; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .bench th { text-align: right; font-weight: 600; color: var(--text-faint); padding: 2px 7px 7px; border-bottom: 1px solid var(--line, #23262d); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
+    .bench th:first-child, .bench td:first-child { text-align: left; }
+    .bench td { padding: 5px 7px; text-align: right; }
+    .bench .win { color: var(--accent); }
+    .bench .lose { color: var(--text-faint); }
+  </style>
+
+  <section class="hero">
+    <p class="lede">
+      Declare what can vary in your system and how you measure better.
+      Germline searches the space and returns an improvement with a lineage
+      <strong>anyone can verify without trusting you</strong>.
+    </p>
+    <p class="sub">
+      A/B testing collapses past about three knobs, and a real agent has twenty.
+      Worse, nobody can prove which version of a system produced a given output;
+      a vendor's own dashboard is not evidence. Germline records every step of a
+      search on 0G Chain so the result survives an audit.
+    </p>
+
+    <div class="hero-grid">
+      <div class="hero-card">
+        <h3>The whole integration</h3>
+<pre><span class="k">const</span> trial = defineTrial({
+  genes: {
+    retrievalDepth: { type: <span class="k">'int'</span>, min: 1, max: 20 },
+    rerank:         { type: <span class="k">'bool'</span> },
+    temperature:    { type: <span class="k">'choice'</span>, options: [0, .2, .7] },
+  },
+  <span class="c">// your eval set, your metric</span>
+  evaluate: <span class="k">async</span> (config) =&gt; ({ score }),
+});
+
+<span class="k">const</span> run = <span class="k">await</span> search(trial, { budget: 40 });</pre>
+        <p style="margin-top:11px">
+          No data leaves. No model is replaced. Nothing sits in the request path.
+        </p>
+      </div>
+
+      <div class="hero-card">
+        <h3>What we do not claim</h3>
+        <table class="bench">
+          <tr><th>landscape</th><th>sampled</th><th>germline</th><th>random</th></tr>
+          <tr><td>synthetic, smooth</td><td>20.8%</td><td class="lose">7821</td><td class="win">9159</td></tr>
+          <tr><td>synthetic, rugged</td><td>20.8%</td><td class="lose">5225</td><td class="win">9500</td></tr>
+          <tr><td>ARC, real data</td><td>0.62%</td><td class="win">4865</td><td class="lose">4765</td></tr>
+        </table>
+        <p style="margin-top:12px">
+          We are not a better optimiser. On smooth spaces random sampling wins,
+          and <code>search()</code> runs that control by default and tells you so.
+          If random wins on your space, use it &mdash; and keep the lineage.
+        </p>
+      </div>
+
+      <div class="hero-card">
+        <h3>Why a chain</h3>
+        <p>
+          A child configuration is derived, not asserted. Its mutation seed is
+          <code>keccak(parentRoot, blockhash, id, n)</code> under commit&ndash;reveal,
+          so the seed does not exist when a breeder commits and cannot be ground
+          for a flattering result.
+        </p>
+        <p>
+          Anyone holding the parent re-runs the mutation and checks it against
+          the chain. A forged lineage fails arithmetic, not trust.
+        </p>
+      </div>
+    </div>
+  </section>
+
+
+
   <section>
     <div class="section-head">
       <h2>Fitness across generations</h2>
