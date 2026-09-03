@@ -1,13 +1,43 @@
 # Germline
 
-Germline is a provenance layer for configuration search. You declare what can
-vary and how you measure better; it searches, and hands back an improvement
-together with a record of how it got there that anyone can verify without
-trusting you.
+**Germline finds a better configuration for your system, and proves how it
+found it.**
 
-It does not claim to be a better optimiser than random sampling -- on smooth
-spaces nothing is, and it says so out loud. It claims that whatever search you
-ran, the result carries a lineage that survives an audit.
+You already have an eval -- a scored test set, a shadow replay, an offline
+judge. Point Germline at it, say which knobs may move, and it searches the
+space for you. You get back a configuration that scores higher than the one
+you are running, plus a record of every step that anyone can re-derive and
+check without taking your word for it.
+
+```js
+const { defineTrial, search } = require("germline");
+
+const trial = defineTrial({
+  name: "support-agent",
+  genes: {
+    retrievalDepth: { type: "int", min: 1, max: 20 },
+    rerank: { type: "bool" },
+    temperature: { type: "choice", options: [0, 0.2, 0.7] },
+  },
+  evaluate: async (config) => ({ score: await runEvalSet(config) }),
+});
+
+const run = await search(trial, { budget: 40 });
+run.best.config;      // ship this
+run.verdict.winner;   // and here is whether it actually beat random
+```
+
+That is the whole integration. No wallet, no account, no data leaving your
+machine, nothing in your request path. Sixty seconds from `npm install` to a
+better configuration.
+
+On a real system -- the world model of an agent that plays ARC-AGI-3 -- it
+took a configuration scoring 3148 to one scoring 4765, and the answer it found
+is one a competent engineer would not have guessed. Details below.
+
+Turn on provenance when you need to show someone. That part uses 0G Chain, and
+it is the reason a chain is involved at all: a customer verifies the record
+themselves rather than trusting the vendor who produced it.
 
 ```js
 const { defineTrial, optimise } = require("germline");
