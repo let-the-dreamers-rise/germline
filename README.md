@@ -151,6 +151,29 @@ simulated lineage dies at generation one on its first unlucky mutation, which
 is what mutations usually are. Four attempts is the minimum that lets
 selection actually choose.
 
+## The reference trial is a real system
+
+The examples in `examples/` are illustrations and say so. The reference trial
+is not. Its genes are the actual configuration of the world model in an agent
+that plays ARC-AGI-3 and is scored on a public leaderboard -- from
+`arc_agent/lawbook.py`, gene for gene:
+
+```
+RING = ((-1,0),(1,0),(0,-1),(0,1))          ->  useRing, ringSides
+ident = (obj["colour"], obj["size"])        ->  useColour, useSize
+momentum = prior_momentum.get(ident, "0")   ->  useMomentum
+if len(seen) != 1: return None              ->  unanimousOnly
+```
+
+That agent's world model was tuned by hand, and its author concluded momentum
+mattered more than the neighbourhood ring -- which is the counterintuitive
+answer. Starting from a configuration that reads nothing, the search reaches
+the same conclusion unaided.
+
+It is dogfooding rather than independent validation: the same person built
+both. See `docs/DOGFOOD.md`, which says exactly what it does and does not
+show.
+
 ## How fitness is measured
 
 The reference trial is real rather than synthetic. It uses 9,955 object
