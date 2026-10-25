@@ -5,6 +5,7 @@
 const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
+const { addressLink } = require("../lib/chain");
 
 // engine/fitness.js measures the action-only baseline at 3148 bps on the
 // shipped corpus. Anything below that is not worth reproducing, because it is
@@ -51,9 +52,8 @@ async function main() {
   console.log("  threshold:", SURVIVAL_THRESHOLD, "bps");
   console.log("  step:     ", FECUNDITY_STEP, "bps per child");
   console.log("  base:     ", BASE_FECUNDITY, "offspring when viable");
-  if (network === "zerog") {
-    console.log("  explorer: https://chainscan.0g.ai/address/" + address);
-  }
+  const link = addressLink(network, address);
+  if (link) console.log("  explorer: " + link);
 
   const dir = path.join(__dirname, "..", "deployments");
   fs.mkdirSync(dir, { recursive: true });
