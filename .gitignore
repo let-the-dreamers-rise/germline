@@ -15,3 +15,6 @@ genomes/
 
 # Netlify CLI local state. Site id only, but tooling state does not belong in the repo.
 .netlify/
+
+# Audit logs and the local storage cache written by the CLI and SDK.
+.germline/

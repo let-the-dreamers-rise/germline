@@ -2,6 +2,24 @@
 
 Short, and honest about which parts are measured and which are assumptions.
 
+## Update, 0.3.0: what is being sold
+
+The product is now the audit trail (`germline record / verify / anchor /
+report`, see `docs/AUDIT.md`): a tamper-evident record of changes to an AI
+system's prompts, models and parameters, anchored on 0G, aimed at teams who
+are asked for change records by auditors, enterprise customers or the EU AI
+Act. Config search stays in the package as the feature that produces the
+evidence for a change, not as the thing customers pay for.
+
+The reasoning below still holds and is kept as written: our own benchmark
+showed search is a commodity, and the record is the part nobody else gives
+you. What changed is who the record is for. "Provenance" was a property;
+"the change log your SOC 2 auditor asked for" is a budget line.
+
+Still unproven, in order: that teams will log changes this way rather than
+in a spreadsheet, that the on-chain anchor matters to an auditor more than
+a signed PDF would, and what anyone will pay.
+
 ## The wedge
 
 Germline does not ask a team to adopt a platform. It asks for a function they
