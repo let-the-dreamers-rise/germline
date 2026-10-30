@@ -4,6 +4,12 @@ branding:
   icon: shield
   color: green
 
+# Order matters. The log is pushed before it is anchored, so an anchor only
+# ever covers entries that are already on the branch. Anchoring first and then
+# losing a push race would leave a chain record of entries the branch never
+# got, and verification would fail for an honest log forever. Use it with
+# `concurrency: germline` in the workflow (germline init writes that).
+
 inputs:
   anchor-key:
     description: Funded 0G private key, from a repository secret. Optional; without it changes are recorded and verified but not anchored.
@@ -14,7 +20,7 @@ inputs:
     required: false
     default: ""
   upload:
-    description: Also publish the log to 0G Storage when anchoring.
+    description: Also publish the log to 0G Storage when anchoring. Fails the run if the upload fails.
     required: false
     default: "false"
   commit:
@@ -31,23 +37,51 @@ runs:
   steps:
     - name: Install germline
       shell: bash
-      run: npm install --omit=dev --no-audit --no-fund --prefix "${{ github.action_path }}" >/dev/null
-
-    - name: Verify the existing log
-      shell: bash
+      env:
+        UPLOAD: ${{ inputs.upload }}
       run: |
-        if [ -f .germline/config.json ] || [ -f .germline/audit.jsonl ]; then
-          node "${{ github.action_path }}/bin/germline.js" verify
+        npm install --omit=dev --no-audit --no-fund --prefix "${{ github.action_path }}" >/dev/null
+        if [ "$UPLOAD" = "true" ]; then
+          npm install --no-save --no-audit --no-fund --legacy-peer-deps --prefix "${{ github.action_path }}" @0gfoundation/0g-storage-ts-sdk >/dev/null
         fi
 
-    - name: Record changes
+    - name: Verify the existing log
       shell: bash
       run: |
         if [ ! -f .germline/config.json ]; then
           echo "::error::No .germline/config.json. Run 'npx germline init' in the repository first."
           exit 1
         fi
-        node "${{ github.action_path }}/bin/germline.js" track
+        node "${{ github.action_path }}/bin/germline.js" verify
+
+    - name: Record changes and push them
+      shell: bash
+      env:
+        COMMIT: ${{ inputs.commit }}
+        EVENT: ${{ github.event_name }}
+        BRANCH: ${{ github.ref_name }}
+      run: |
+        G="${{ github.action_path }}/bin/germline.js"
+        LOG=$(node "$G" path)
+        node "$G" track
+        if [ "$COMMIT" != "true" ] || [ "$EVENT" != "push" ]; then exit 0; fi
+        git config user.name "germline[bot]"
+        git config user.email "germline-bot@users.noreply.github.com"
+        for attempt in 1 2 3 4; do
+          git add "$LOG"
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -qm "audit: record AI config changes [skip ci]"
+          if git push origin "HEAD:$BRANCH"; then exit 0; fi
+          # Someone pushed in between. Take their branch, log included, and
+          # record again on top of it: tracking is per commit, so the result
+          # is the same entries, now linked to the right head.
+          echo "push rejected; rebuilding the record on the new head ($attempt)"
+          git fetch -q origin "$BRANCH"
+          git reset -q --hard "origin/$BRANCH"
+          node "$G" track
+        done
+        echo "::error::Could not push the audit log after 4 attempts. Is the branch protected? See docs/AUDIT.md#branch-protection."
+        exit 1
 
     - name: Anchor on 0G
       shell: bash
@@ -56,18 +90,25 @@ runs:
         GERMLINE_REGISTRY: ${{ inputs.registry }}
         ZEROG_RPC: ${{ inputs.rpc }}
         UPLOAD: ${{ inputs.upload }}
+        COMMIT: ${{ inputs.commit }}
+        EVENT: ${{ github.event_name }}
+        BRANCH: ${{ github.ref_name }}
       run: |
+        G="${{ github.action_path }}/bin/germline.js"
+        # Only anchor what the branch already holds; see the note at the top.
+        if [ "$COMMIT" = "true" ] && [ "$EVENT" != "push" ]; then
+          echo "not a push; recorded and verified, not anchored"
+          exit 0
+        fi
         args="--if-key"
         if [ "$UPLOAD" = "true" ]; then args="$args --upload"; fi
-        node "${{ github.action_path }}/bin/germline.js" anchor $args
-
-    - name: Commit the log
-      if: inputs.commit == 'true' && github.event_name == 'push'
-      shell: bash
-      run: |
-        git add .germline/audit.jsonl
+        node "$G" anchor $args
+        if [ "$COMMIT" != "true" ] || [ "$EVENT" != "push" ]; then exit 0; fi
+        LOG=$(node "$G" path)
+        git add "$LOG"
         if git diff --cached --quiet; then exit 0; fi
-        git config user.name "germline[bot]"
-        git config user.email "germline-bot@users.noreply.github.com"
-        git commit -m "audit: record AI config changes [skip ci]"
-        git push
+        git commit -qm "audit: anchor record [skip ci]"
+        # If this push loses a race the anchor is still valid: it covers
+        # entries already on the branch. Only its receipt line is missing,
+        # which verify reports as a warning, and the next run anchors again.
+        git push origin "HEAD:$BRANCH" || echo "::warning::anchored, but the anchor receipt could not be pushed; the next run will anchor again"

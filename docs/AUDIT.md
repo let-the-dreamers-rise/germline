@@ -39,9 +39,38 @@ anchoring and that record is itself covered by the next anchor.
 
 `npx germline init` writes `.github/workflows/germline.yml`, which uses the
 Germline GitHub Action (`action.yml` at the root of this repository). On
-every push it verifies the existing log, records whatever changed in the
-tracked files, anchors on 0G if `GERMLINE_ANCHOR_KEY` is set, and commits the
-updated log back with `[skip ci]`.
+every push it:
+
+1. verifies the existing log, and stops if it has been tampered with;
+2. records one entry per commit that touched a tracked file, credited to the
+   commit's author, with the commit's message as the reason and any ticket
+   (`ABC-123` or `#45`) it mentions; the CI identity is kept as `recordedBy`;
+3. commits the log back with `[skip ci]` and pushes it, rebuilding and
+   retrying if someone pushed in between;
+4. only then, if `GERMLINE_ANCHOR_KEY` is set, anchors the pushed head on 0G
+   and pushes the anchor receipt.
+
+Pushing before anchoring matters: an anchor of entries that never reached the
+branch would make verification fail for an honest log forever. The workflow
+`init` writes uses `fetch-depth: 0`, so every commit is visible, and
+`concurrency: germline`, so two runs never write at once.
+
+### Branch protection
+
+If the default branch rejects pushes from the workflow, the log cannot be
+committed and the run fails with a pointer here. Two options:
+
+- allow the `github-actions[bot]` (or the token you give the action) to
+  bypass the rule for this workflow; or
+- set `"log"` in `.germline/config.json` to a path you push to a separate,
+  unprotected branch (e.g. with a second checkout), and pin that branch in
+  your verify job.
+
+### Attaching test evidence
+
+`germline track --score 0.91 --baseline 0.84 --suite refunds-v4` or
+`germline track --eval-file eval.json` attaches the evaluation that justified
+the change to every entry it writes. Run it in the job that runs your evals.
 
 | input | default | meaning |
 |---|---|---|

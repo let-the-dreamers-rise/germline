@@ -48,9 +48,30 @@ first.
 - **Redacted configs with little entropy can be guessed.** A redacted entry
   keeps `keccak256` of the config. If the config is `{ "temperature": 0.2 }`,
   anyone can try candidates. Redaction hides long prompts, not small values.
-- **The anchoring key is a hot key.** If it leaks, an attacker can add
-  anchors but cannot remove or alter existing ones; the registry is
-  append-only per key. Rotate by anchoring under a new key and publishing it.
+- **The anchoring key is a hot key, and a leak is a denial of service.** A
+  leaked key cannot remove or alter existing anchors (the registry is
+  append-only per key). It *can* anchor a junk head with a huge entry count
+  under your log id. After that, verification pinned to that key fails, and
+  your own anchors with that key revert, because `covered` must increase.
+  Earlier anchors stay valid and visible. Recovery: rotate to a new key,
+  anchor under it, and tell verifiers to pin the new address. Keep the key
+  in a CI secret scoped to the one workflow, fund it with a few cents of 0G,
+  and never reuse it for anything else.
+- **The CI push races are handled; a protected branch needs a decision.** The
+  action pushes the log before anchoring it, so an anchor only ever covers
+  entries already on the branch, and it rebuilds and retries when someone
+  pushes in between. If the branch is protected against bot pushes, either
+  allow the workflow's token to bypass, or point `config.log` at a file on a
+  separate branch. See docs/AUDIT.md.
+- **Raw bytes are pinned.** Each line must be the canonical serialisation of
+  its value (`JSON.stringify` of the parsed line), so duplicate keys, padded
+  numbers and alternative escapes are rejected rather than parsed two ways.
+- **Tracked paths stay inside the repository.** Absolute paths, `..`,
+  symlinks that resolve outside the repository and anything under `.git` are
+  refused, so a merged config change cannot copy runner secrets into the log.
+- **The evidence pack is hostile input.** Every value from the log is escaped,
+  hashes and addresses are shape-checked, and the pack's verification command
+  never fills in pins from the file it describes.
 - **Chain and storage availability.** Verification of anchors needs a working
   0G RPC. The hash chain itself verifies offline.
 

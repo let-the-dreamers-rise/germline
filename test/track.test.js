@@ -4,7 +4,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { openAuditLog } = require("../sdk/audit");
-const { init, trackAll, discover, snapshot } = require("../sdk/track");
+const { init, trackAll, discover, snapshot, ticketFrom, loadConfig } = require("../sdk/track");
 const { renderMarkdown } = require("../sdk/report");
 
 // The path a team actually takes: init once, then track on every change.
@@ -54,8 +54,16 @@ describe("init and track", function () {
     });
   });
 
+  it("skips the workflow outside git, and names the system from package.json", function () {
+    const dir = repo({ ...FILES, "package.json": JSON.stringify({ name: "@acme/support-bot" }) });
+    const report = init({ cwd: dir });
+    expect(report.workflow).to.equal(null);
+    expect(loadConfig(dir).systems[0].name).to.equal("support-bot");
+  });
+
   it("init writes config, workflow and a baseline, and never overwrites", function () {
     const dir = repo(FILES);
+    execFileSync("git", ["init", "-q"], { cwd: dir });
     const first = init({ cwd: dir, system: "support" });
     expect(first).to.include({ config: "written", workflow: "written" });
     expect(first.baseline).to.have.length(1);
@@ -80,7 +88,7 @@ describe("init and track", function () {
     const { written, log } = trackAll({ cwd: dir, reason: "lower temperature" });
     expect(written).to.have.length(1);
     expect(written[0].changes).to.deep.equal([
-      { key: "config/agent.json", from: { model: "m-1", temperature: 0.7 }, to: { model: "m-1", temperature: 0.2 } },
+      { key: "config/agent.json › temperature", from: 0.7, to: 0.2 },
     ]);
     expect(written[0]).to.include({ actor: "test-actor", reason: "lower temperature" });
 
@@ -90,19 +98,47 @@ describe("init and track", function () {
     expect(log.verify().ok).to.equal(true);
   });
 
-  it("takes the reason and commit from git", function () {
+  it("records one entry per commit, credited to its author, with its ticket", function () {
     const dir = repo(FILES);
-    const g = (...args) => execFileSync("git", args, { cwd: dir, stdio: "ignore" });
-    g("init", "-q");
-    g("-c", "user.email=t@t", "-c", "user.name=t", "add", ".");
-    g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "Tighten refund prompt");
+    const g = (email, ...args) => execFileSync("git", ["-c", "user.email=" + email, "-c", "user.name=n", ...args], { cwd: dir, stdio: "ignore" });
+    g("a@x", "init", "-q");
+    g("a@x", "add", ".");
+    g("a@x", "commit", "-qm", "Tighten refund prompt");
     init({ cwd: dir, system: "support" });
-    const entry = openAuditLog(path.join(dir, ".germline/audit.jsonl")).entries()[0];
-    expect(entry.reason).to.equal("baseline: germline init");
+    const first = openAuditLog(path.join(dir, ".germline/audit.jsonl")).entries()[0];
+    expect(first).to.include({ actor: "a@x", reason: "Tighten refund prompt", recordedBy: "test-actor" });
+    expect(first.commit).to.match(/^[0-9a-f]{40}$/);
+
     fs.writeFileSync(path.join(dir, "prompts/system.md"), "You are terse.");
-    const changed = trackAll({ cwd: dir }).written[0];
-    expect(changed.reason).to.equal("Tighten refund prompt");
-    expect(changed.ticket).to.match(/^[0-9a-f]{12}$/);
+    g("b@x", "commit", "-qam", "Shorter prompt (SUP-42)");
+    fs.writeFileSync(path.join(dir, "config/agent.json"), JSON.stringify({ model: "m-2", temperature: 0.7 }));
+    g("c@x", "commit", "-qam", "Upgrade model, fixes #7");
+    const { written, log } = trackAll({ cwd: dir });
+    expect(written.map((e) => [e.actor, e.ticket])).to.deep.equal([["b@x", "SUP-42"], ["c@x", "#7"]]);
+    expect(written[1].changes).to.deep.equal([{ key: "config/agent.json › model", from: "m-1", to: "m-2" }]);
+    expect(trackAll({ cwd: dir }).written).to.have.length(0);
+
+    fs.writeFileSync(path.join(dir, "prompts/system.md"), "Uncommitted.");
+    expect(trackAll({ cwd: dir }).written[0]).to.include({ reason: "uncommitted working-tree change", commit: null });
+    expect(log.verify().ok).to.equal(true);
+  });
+
+  it("refuses tracked paths outside the repository, through links, or in .git", function () {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "germline-out-"));
+    fs.writeFileSync(path.join(outside, "secret.env"), "SECRET=1");
+    const dir = repo(FILES);
+    fs.symlinkSync(path.join(outside, "secret.env"), path.join(dir, "agent.prompt"));
+    const config = (files) => ({ systems: [{ name: "s", files }] });
+    expect(() => trackAll({ cwd: dir, config: config(["../x"]) })).to.throw(/outside the repository/);
+    expect(() => trackAll({ cwd: dir, config: config([path.join(outside, "secret.env")]) })).to.throw(/outside/);
+    expect(() => trackAll({ cwd: dir, config: config(["agent.prompt"]) })).to.throw(/link to a file outside/);
+    expect(() => trackAll({ cwd: dir, config: config([".git/config"]) })).to.throw(/inside .git/);
+  });
+
+  it("finds tickets in commit messages", function () {
+    expect(ticketFrom("Fix refunds (LEGAL-88)")).to.equal("LEGAL-88");
+    expect(ticketFrom("Merge pull request #12 from x")).to.equal("#12");
+    expect(ticketFrom("no ticket here")).to.equal(null);
   });
 
   it("track() in the SDK is a no-op when nothing changed", function () {
@@ -117,7 +153,19 @@ describe("init and track", function () {
   it("keeps long prompts readable in the evidence pack", function () {
     const log = openAuditLog(path.join(repo({}), "a.jsonl"));
     log.track("bot", { prompt: "x".repeat(500) }, { actor: "a" });
-    expect(renderMarkdown(log.entries())).to.include("(500 chars)");
+    log.track("bot", { prompt: "line one\nline two" }, { actor: "a" });
+    const md = renderMarkdown(log.entries());
+    expect(md).to.match(/prompt: \d line\(s\) changed/);
+    expect(md).to.include("## Text changes").to.include("## Text changes").and.to.include("    + line two");
+  });
+
+  it("demo records, verifies, and catches the tampering it stages", function () {
+    const lines = [];
+    const { demo } = require("../sdk/demo");
+    const result = demo({ out: (l) => lines.push(l), delay: 0 });
+    expect(result.detected).to.equal(true);
+    expect(lines.join("\n")).to.include("verify: OK, 4 entries").and.to.include("verify: FAILED");
+    expect(fs.existsSync(result.dir)).to.equal(false);
   });
 
   it("cli: init, track, verify in a fresh repo", function () {

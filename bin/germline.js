@@ -22,7 +22,7 @@
 
 const fs = require("fs");
 const { openAuditLog } = require("../sdk/audit");
-const { renderMarkdown } = require("../sdk/report");
+const { renderMarkdown, renderJson, renderCsv } = require("../sdk/report");
 const track = require("../sdk/track");
 
 const path = require("path");
@@ -33,7 +33,7 @@ const DEFAULT_RPC = process.env.ZEROG_RPC || "https://evmrpc.0g.ai";
 // address recorded in deployments/ for the chain the RPC reports. Null means
 // plain-transaction anchors, which work everywhere but are weaker.
 async function registryFor(flags, provider) {
-  if (flags.registry && flags.registry !== true) return flags.registry;
+  if (flags.registry) return flags.registry;
   if (process.env.GERMLINE_REGISTRY) return process.env.GERMLINE_REGISTRY;
   const { chainId } = await provider.getNetwork();
   const dir = path.join(__dirname, "..", "deployments");
@@ -47,11 +47,15 @@ async function registryFor(flags, provider) {
   return null;
 }
 
+const HEX = (bytes) => new RegExp("^0x[0-9a-fA-F]{" + bytes * 2 + "}$");
+
 function pins(flags) {
-  return {
-    logId: flags["log-id"] && flags["log-id"] !== true ? flags["log-id"] : undefined,
-    anchorer: flags.anchorer && flags.anchorer !== true ? flags.anchorer.split(",") : undefined,
-  };
+  const logId = flags["log-id"];
+  const anchorer = flags.anchorer ? flags.anchorer.split(",").map((a) => a.trim()) : undefined;
+  if (logId !== undefined && !HEX(32).test(logId)) throw new Error("--log-id must be a 0x-prefixed 32-byte hex id");
+  for (const a of anchorer || []) if (!HEX(20).test(a)) throw new Error("--anchorer must be 0x-prefixed addresses, got " + JSON.stringify(a));
+  if (flags.registry !== undefined && !HEX(20).test(flags.registry)) throw new Error("--registry must be a 0x-prefixed address");
+  return { logId, anchorer };
 }
 
 async function chainCheck(log, flags) {
@@ -61,25 +65,76 @@ async function chainCheck(log, flags) {
   return log.verifyChain(provider, { ...pins(flags), registry: registry || undefined });
 }
 
+// Which flags each command takes, and whether each takes a value. Anything
+// else is an error: a mistyped --anchorer that is silently ignored turns a
+// pinned check into an unpinned one, which is the failure an auditor never sees.
+const VALUE = "value";
+const BOOL = "bool";
+const COMMON = { log: VALUE };
+const EVAL = { score: VALUE, baseline: VALUE, suite: VALUE, "eval-file": VALUE };
+const PINS = { "log-id": VALUE, anchorer: VALUE, registry: VALUE };
+const SPEC = {
+  record: { ...COMMON, ...EVAL, system: VALUE, actor: VALUE, before: VALUE, after: VALUE, reason: VALUE, ticket: VALUE, redact: BOOL },
+  track: { ...COMMON, ...EVAL, actor: VALUE, reason: VALUE, ticket: VALUE },
+  verify: { ...COMMON, ...PINS, chain: BOOL, strict: BOOL },
+  anchor: { ...COMMON, registry: VALUE, upload: BOOL, "if-key": BOOL },
+  report: { ...COMMON, ...PINS, out: VALUE, title: VALUE, chain: BOOL, format: VALUE },
+  init: { files: VALUE, system: VALUE, redact: BOOL, "no-workflow": BOOL },
+  demo: { fast: BOOL },
+  id: COMMON,
+  log: COMMON,
+  path: COMMON,
+};
+
 function parse(argv) {
   const [command, ...rest] = argv;
+  const spec = SPEC[command] || {};
   const flags = {};
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (!arg.startsWith("--")) throw new Error("unexpected argument " + JSON.stringify(arg));
-    const key = arg.slice(2);
-    const next = rest[i + 1];
-    if (next === undefined || next.startsWith("--")) flags[key] = true;
-    else {
-      flags[key] = next;
-      i++;
+    let key = arg.slice(2);
+    let value;
+    const eq = key.indexOf("=");
+    if (eq >= 0) {
+      value = key.slice(eq + 1);
+      key = key.slice(0, eq);
     }
+    const kind = spec[key];
+    if (!kind) {
+      throw new Error("unknown option --" + key + (SPEC[command] ? " for `germline " + command + "`" : "") + ". See `germline help`.");
+    }
+    if (kind === BOOL) {
+      if (value !== undefined) throw new Error("--" + key + " takes no value");
+      flags[key] = true;
+      continue;
+    }
+    if (value === undefined) {
+      // A value flag takes the next argument whatever it looks like, so
+      // --reason "--force-pushed hotfix" records that reason.
+      if (i + 1 >= rest.length) throw new Error("--" + key + " needs a value");
+      value = rest[++i];
+    }
+    flags[key] = value;
   }
   return { command, flags };
 }
 
+function evaluationFrom(flags) {
+  const evaluation = flags["eval-file"] ? readJson(flags["eval-file"], "--eval-file") : {};
+  if (evaluation === null || typeof evaluation !== "object" || Array.isArray(evaluation)) {
+    throw new Error("--eval-file must hold a JSON object, e.g. {\"score\": 0.91, \"suite\": \"refunds-v4\"}");
+  }
+  const score = number(flags.score, "--score");
+  const base = number(flags.baseline, "--baseline");
+  if (score !== undefined) evaluation.score = score;
+  if (base !== undefined) evaluation.baseline = base;
+  if (flags.suite) evaluation.suite = flags.suite;
+  return Object.keys(evaluation).length ? evaluation : undefined;
+}
+
 function readJson(file, label) {
-  if (!file || file === true) return undefined;
+  if (!file) return undefined;
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (error) {
@@ -109,16 +164,20 @@ const HELP = `germline -- a tamper-evident audit trail for AI configuration chan
 
   germline init [--files a.md,b.json] [--system <name>] [--redact] [--no-workflow]
                   find your prompt and config files, write the CI workflow, record a baseline
-  germline track  record whatever changed in the tracked files since last time
+  germline track [--score <n>] [--baseline <n>] [--suite <name>] [--eval-file <eval.json>]
+                  record whatever changed in the tracked files, one entry per commit
+  germline demo   one-minute walkthrough: record, verify, tamper, catch it
 
   germline record --system <name> --actor <who> --after <config.json>
                   [--before <old.json>] [--reason <text>] [--ticket <id>]
-                  [--score <n>] [--baseline <n>] [--suite <name>] [--redact]
-  germline verify [--chain] [--strict] [--log-id <id>] [--anchorer <0x..>]
+                  [--score <n>] [--baseline <n>] [--suite <name>] [--eval-file <f>] [--redact]
+  germline verify [--log-id <id>] [--chain [--anchorer <0x..>] [--registry <0x..>]] [--strict]
+                  --strict fails on any warning, including "never anchored"
   germline anchor [--upload] [--registry <0x..>] [--if-key]
-  germline id
-  germline report [--out <file.md>] [--title <text>] [--chain]
+  germline id     the log id to keep somewhere other than the log
+  germline report [--format md|json|csv] [--out <file>] [--title <text>] [--chain [pins]]
   germline log
+  germline --version
 
   --log <file>   audit log to use (default .germline/audit.jsonl)
 
@@ -128,7 +187,7 @@ GERMLINE_ACTOR (default --actor), GERMLINE_REGISTRY (anchor registry). anchor --
 
 async function main() {
   const { command, flags } = parse(process.argv.slice(2));
-  let file = flags.log && flags.log !== true ? flags.log : null;
+  let file = flags.log || null;
   if (!file) {
     try {
       file = track.loadConfig().log || null;
@@ -139,20 +198,14 @@ async function main() {
 
   switch (command) {
     case "record": {
-      const evaluation = {};
-      const score = number(flags.score, "--score");
-      const base = number(flags.baseline, "--baseline");
-      if (score !== undefined) evaluation.score = score;
-      if (base !== undefined) evaluation.baseline = base;
-      if (flags.suite && flags.suite !== true) evaluation.suite = flags.suite;
       const entry = log.record({
-        system: flags.system === true ? undefined : flags.system,
-        actor: flags.actor === true ? undefined : flags.actor || process.env.GERMLINE_ACTOR,
+        system: flags.system,
+        actor: flags.actor || process.env.GERMLINE_ACTOR,
         before: readJson(flags.before, "--before"),
         after: readJson(flags.after, "--after"),
-        reason: flags.reason === true ? undefined : flags.reason,
-        ticket: flags.ticket === true ? undefined : flags.ticket,
-        eval: Object.keys(evaluation).length ? evaluation : undefined,
+        reason: flags.reason,
+        ticket: flags.ticket,
+        eval: evaluationFrom(flags),
         redact: flags.redact === true,
       });
       const what = entry.changes.map((c) => c.key).join(", ") || "no field changed";
@@ -161,6 +214,10 @@ async function main() {
     }
 
     case "verify": {
+      const pinned = pins(flags);
+      if ((flags.anchorer || flags.registry) && !flags.chain) {
+        throw new Error("--anchorer and --registry are checked against the chain: add --chain");
+      }
       const result = log.verify();
       if (result.ok) console.log("ok: " + result.entries + " entries, head " + result.head);
       else {
@@ -169,6 +226,11 @@ async function main() {
         process.exitCode = 1;
       }
       for (const w of result.warnings) console.log("  warning: entry " + w.seq + ": " + w.reason);
+      // The log id pin needs no chain: it is the hash of the first entry.
+      if (pinned.logId && String(result.logId).toLowerCase() !== pinned.logId.toLowerCase()) {
+        console.error("FAILED: this log's id is " + result.logId + ", not the " + pinned.logId + " you pinned (it was rewritten or is a different log)");
+        process.exitCode = 1;
+      }
       if (flags.chain) {
         const chain = await chainCheck(log, flags);
         console.log("log id: " + chain.logId);
@@ -179,13 +241,29 @@ async function main() {
         }
         for (const w of chain.warnings) console.log("  warning: " + w);
         if (flags.strict && chain.warnings.length) process.exitCode = 1;
-      }      return;
+      } else if (result.ok) {
+        // Offline, only the hash chain is checked. Say what that does not cover.
+        const anchored = log.entries().some((e) => e.kind === "anchor");
+        const why = anchored
+          ? "anchors not checked: add --chain to check them against 0G"
+          : "never anchored: whoever holds this file could rewrite all of it consistently";
+        console.log("  warning: " + why);
+        if (flags.strict) process.exitCode = 1;
+      }
+      return;
+    }
+
+    case "demo": {
+      const { demo } = require("../sdk/demo");
+      const result = demo({ delay: flags.fast ? 0 : 600 });
+      if (!result.detected) process.exitCode = 1;
+      return;
     }
 
     case "init": {
       const report = track.init({
-        files: flags.files && flags.files !== true ? flags.files.split(",").map((f) => f.trim()).filter(Boolean) : undefined,
-        system: flags.system && flags.system !== true ? flags.system : undefined,
+        files: flags.files ? flags.files.split(",").map((f) => f.trim()).filter(Boolean) : undefined,
+        system: flags.system,
         redact: flags.redact === true,
         workflow: flags["no-workflow"] !== true,
       });
@@ -193,6 +271,7 @@ async function main() {
       console.log("  tracking:  " + report.files.join(", "));
       console.log("  config:    .germline/config.json (" + report.config + ")");
       if (report.workflow) console.log("  workflow:  .github/workflows/germline.yml (" + report.workflow + ")");
+      else if (!report.git) console.log("  workflow:  skipped (not a git repository; run init again after git init)");
       console.log("  baseline:  " + (report.baseline.length ? report.baseline.length + " system(s) recorded" : "already recorded"));
       console.log("\nNext:");
       console.log("  1. Check the file list in .germline/config.json");
@@ -203,14 +282,20 @@ async function main() {
 
     case "track": {
       const { written } = track.trackAll({
-        actor: flags.actor && flags.actor !== true ? flags.actor : undefined,
-        reason: flags.reason && flags.reason !== true ? flags.reason : undefined,
-        ticket: flags.ticket && flags.ticket !== true ? flags.ticket : undefined,
+        actor: flags.actor,
+        reason: flags.reason,
+        ticket: flags.ticket,
+        eval: evaluationFrom(flags),
       });
       if (!written.length) console.log("no tracked config changed");
       for (const e of written) {
         console.log("recorded #" + e.seq + "  " + e.system + "  " + (e.changes.map((c) => c.key).join(", ") || "baseline") + "  " + e.actor);
       }
+      return;
+    }
+
+    case "path": {
+      console.log(file);
       return;
     }
 
@@ -220,6 +305,7 @@ async function main() {
         return;
       }
       const signer = signerFromEnv();
+      if (flags.registry) pins(flags);
       const registry = await registryFor(flags, signer.provider);
       const entry = await log.anchor({ signer, upload: flags.upload === true, registry: registry || undefined });
       console.log("anchored " + entry.anchoredEntries + " entries, head " + entry.anchoredHead);
@@ -233,18 +319,23 @@ async function main() {
     }
 
     case "report": {
+      const format = flags.format || (flags.out && /\.json$/i.test(flags.out) ? "json" : flags.out && /\.csv$/i.test(flags.out) ? "csv" : "md");
+      if (!["md", "json", "csv"].includes(format)) throw new Error("--format must be md, json or csv");
+      const pinned = pins(flags);
       let chain;
       if (flags.chain) chain = await chainCheck(log, flags);
-      const markdown = renderMarkdown(log.entries(), {
+      const options = {
         source: file,
-        title: flags.title === true ? undefined : flags.title,
+        title: flags.title,
+        pins: pinned,
         anchorChecks: chain ? chain.results : undefined,
         chainWarnings: chain ? chain.warnings : undefined,
-      });
-      if (flags.out && flags.out !== true) {
-        fs.writeFileSync(flags.out, markdown, "utf8");
+      };
+      const text = format === "json" ? renderJson(log.entries(), options) : format === "csv" ? renderCsv(log.entries()) : renderMarkdown(log.entries(), options);
+      if (flags.out) {
+        fs.writeFileSync(flags.out, text, "utf8");
         console.log("wrote " + flags.out);
-      } else process.stdout.write(markdown);
+      } else process.stdout.write(text);
       return;
     }
 
@@ -263,6 +354,12 @@ async function main() {
       return;
     }
 
+    case "--version":
+    case "-v":
+    case "version":
+      console.log(require("../package.json").version);
+      return;
+
     case undefined:
     case "help":
     case "--help":
@@ -274,7 +371,23 @@ async function main() {
   }
 }
 
+// Network failures from ethers are long and cryptic. Say what to check.
+function friendly(error) {
+  const code = error && (error.code || (error.error && error.error.code));
+  const text = String((error && (error.shortMessage || error.message)) || error);
+  if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|NETWORK_ERROR|failed to detect network|fetch failed/i.test(text + " " + code)) {
+    return "cannot reach the 0G RPC at " + DEFAULT_RPC + ". Check your connection, or set ZEROG_RPC to another endpoint. (" + text.slice(0, 120) + ")";
+  }
+  if (code === "INSUFFICIENT_FUNDS" || /insufficient funds/i.test(text)) {
+    return "the anchor key has no 0G to pay for the transaction. Fund its address and try again.";
+  }
+  if (/NotAppendOnly/.test(text)) {
+    return "the registry already holds a longer anchor for this log from this key. An anchor can only move forward; see SECURITY.md (leaked keys).";
+  }
+  return text;
+}
+
 main().catch((error) => {
-  console.error("germline: " + error.message);
+  console.error("germline: " + friendly(error));
   process.exitCode = 1;
 });

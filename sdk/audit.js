@@ -87,31 +87,107 @@ function configRootOf(config) {
   return config === undefined || config === null ? null : hashOf(config);
 }
 
-/// Which top-level keys changed, with their old and new values. Nested
-/// objects compare by canonical form, so key order never shows up as a
-/// change.
+/// What changed between two configs, setting by setting.
+///
+/// Objects are walked to their leaves, so a file holding a JSON config shows
+/// up as `config/agent.json › temperature: 0.7 → 0.2` rather than as one
+/// opaque replaced blob. Arrays are compared whole: an element's position is
+/// rarely a setting anyone names. Long or multi-line text -- a prompt -- also
+/// carries a line diff, because "the prompt changed" is not an answer to
+/// "what did you change in the prompt". Nested keys compare by canonical
+/// form, so key order never shows up as a change.
+const SEP = " › ";
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function flatten(value, prefix, out) {
+  if (isPlainObject(value) && Object.keys(value).length > 0) {
+    for (const key of Object.keys(value)) flatten(value[key], prefix === null ? key : prefix + SEP + key, out);
+  } else if (prefix !== null) {
+    out.set(prefix, value);
+  }
+  return out;
+}
+
+function leaves(config) {
+  if (config === undefined || config === null) return new Map();
+  if (!isPlainObject(config)) return new Map([["(value)", config]]);
+  return flatten(config, null, new Map());
+}
+
+/// Hash of every leaf, which is all a redacted entry keeps: enough to say
+/// which settings changed next time, without storing what they were.
+function leafRootsOf(config) {
+  const roots = {};
+  for (const [key, value] of leaves(config)) roots[key] = hashOf(value === undefined ? null : value);
+  return roots;
+}
+
+function lineDiff(from, to) {
+  const a = from.split("\n");
+  const b = to.split("\n");
+  // Longest common subsequence over lines. Prompts are small; past this size
+  // a line diff is no longer what a reader wants anyway.
+  if (a.length * b.length > 250000) return null;
+  const dp = Array.from({ length: a.length + 1 }, () => new Uint32Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      i++;
+      j++;
+    } else if (i < a.length && (j === b.length || dp[i + 1][j] >= dp[i][j + 1])) {
+      // Removals before additions, the order every diff reader expects.
+      out.push("- " + a[i++]);
+    } else {
+      out.push("+ " + b[j++]);
+    }
+  }
+  return out.slice(0, 200);
+}
+
 function diff(before, after) {
-  const a = before || {};
-  const b = after || {};
-  const keys = Array.from(new Set([...Object.keys(a), ...Object.keys(b)])).sort();
+  const a = leaves(before);
+  const b = leaves(after);
+  const keys = Array.from(new Set([...a.keys(), ...b.keys()])).sort();
   const changes = [];
   for (const key of keys) {
-    const was = a[key];
-    const now = b[key];
+    const was = a.get(key);
+    const now = b.get(key);
     const same =
-      was !== undefined && now !== undefined
-        ? stableStringify(was) === stableStringify(now)
-        : was === now;
-    if (!same) {
-      changes.push({
-        key,
-        from: was === undefined ? null : was,
-        to: now === undefined ? null : now,
-      });
+      was !== undefined && now !== undefined ? stableStringify(was) === stableStringify(now) : was === now;
+    if (same) continue;
+    const change = { key, from: was === undefined ? null : was, to: now === undefined ? null : now };
+    if (typeof change.from === "string" && typeof change.to === "string" &&
+        (change.from.includes("\n") || change.to.includes("\n") || change.from.length > 80 || change.to.length > 80)) {
+      const lines = lineDiff(change.from, change.to);
+      if (lines) change.lines = lines;
     }
+    changes.push(change);
   }
   return changes;
 }
+
+/// Which leaves differ between two leafRootsOf() maps. Used for redacted
+/// entries, which have no values to diff.
+function diffRoots(before, after) {
+  const a = before || {};
+  const b = after || {};
+  return Array.from(new Set([...Object.keys(a), ...Object.keys(b)]))
+    .sort()
+    .filter((key) => a[key] !== b[key])
+    .map((key) => ({ key }));
+}
+
+const ISO_TS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
 function readEntries(file) {
   if (!fs.existsSync(file)) return [];
@@ -120,7 +196,17 @@ function readEntries(file) {
   text.split("\n").forEach((line, index) => {
     if (!line.trim()) return;
     try {
-      entries.push(JSON.parse(line));
+      const entry = JSON.parse(line);
+      // Every entry is an object. Anything else (null, a number, an array)
+      // is corruption, and must not crash the verifier.
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) throw new Error("not an object");
+      // The hash covers the parsed value, so the bytes must be the one
+      // serialisation of it: no duplicate keys, no padded numbers, no escapes
+      // that other parsers read differently. Our writer always emits this.
+      if (JSON.stringify(entry) !== line.replace(/\r$/, "")) {
+        Object.defineProperty(entry, "__noncanonical", { value: true, enumerable: false });
+      }
+      entries.push(entry);
     } catch (error) {
       // An unparseable line is itself evidence of tampering or corruption,
       // so keep a placeholder that verify() will reject rather than skip it.
@@ -144,7 +230,8 @@ function verifyEntries(entries) {
   let lastTs = null;
   entries.forEach((entry, index) => {
     if (!entry.__unparseable) {
-      const ts = Date.parse(entry.ts);
+      // ISO 8601 with an explicit zone, so every verifier reads the same instant.
+      const ts = typeof entry.ts === "string" && ISO_TS.test(entry.ts) ? Date.parse(entry.ts) : NaN;
       if (!Number.isFinite(ts)) {
         problems.push({ seq: index, reason: "timestamp " + JSON.stringify(entry.ts) + " is not a date" });
       } else {
@@ -158,6 +245,9 @@ function verifyEntries(entries) {
       problems.push({ seq: index, reason: "line " + entry.line + " is not valid JSON" });
       prev = null;
       return;
+    }
+    if (entry.__noncanonical) {
+      problems.push({ seq: index, reason: "line is not in canonical form (duplicate keys, reformatted numbers or escapes)" });
     }
     if (entry.format !== FORMAT) {
       problems.push({ seq: index, reason: "unknown format " + JSON.stringify(entry.format) });
@@ -193,17 +283,24 @@ function verifyEntries(entries) {
 // machine and on the shared filesystems CI runners use.
 function withLock(file, fn) {
   const lock = file + ".lock";
-  const deadline = Date.now() + 10000;
+  const token = process.pid + "-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+  const deadline = Date.now() + 20000;
   for (;;) {
     try {
       fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
-      fs.writeFileSync(lock, String(process.pid), { flag: "wx" });
+      fs.writeFileSync(lock, token, { flag: "wx" });
       break;
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
-      // A lock older than 30 seconds belongs to a writer that died.
+      // A lock older than 15 seconds belongs to a writer that died. Move it
+      // aside under a unique name first, so two waiters cannot both decide it
+      // is stale and then delete each other's fresh lock.
       try {
-        if (Date.now() - fs.statSync(lock).mtimeMs > 30000) fs.unlinkSync(lock);
+        if (Date.now() - fs.statSync(lock).mtimeMs > 15000) {
+          const stale = lock + "." + token;
+          fs.renameSync(lock, stale);
+          fs.unlinkSync(stale);
+        }
       } catch (ignored) {}
       if (Date.now() > deadline) throw new Error("audit log " + file + " is locked by another writer (" + lock + ")");
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
@@ -212,8 +309,9 @@ function withLock(file, fn) {
   try {
     return fn();
   } finally {
+    // Only remove the lock if it is still ours.
     try {
-      fs.unlinkSync(lock);
+      if (fs.readFileSync(lock, "utf8") === token) fs.unlinkSync(lock);
     } catch (ignored) {}
   }
 }
@@ -293,16 +391,39 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
           "). Run `germline verify` to see every problem."
       );
     }
-    const entry = {
-      format: FORMAT,
-      seq: existing.length,
-      prev: existing.length ? existing[existing.length - 1].hash : GENESIS,
-      ts: clock(),
-      ...body,
-    };
+    // Normalise through JSON first, so what is hashed is exactly what is
+    // written: a Buffer or Date (anything with toJSON) would otherwise hash
+    // one way and serialise another, and poison the log.
+    const entry = JSON.parse(
+      JSON.stringify({
+        format: FORMAT,
+        seq: existing.length,
+        prev: existing.length ? existing[existing.length - 1].hash : GENESIS,
+        ts: clock(),
+        ...body,
+      })
+    );
     entry.hash = hashOf(entry);
     fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
-    fs.appendFileSync(file, JSON.stringify(entry) + "\n", "utf8");
+    // A file whose last line lost its newline would otherwise glue the new
+    // entry onto it and corrupt both.
+    let lead = "";
+    if (fs.existsSync(file)) {
+      const size = fs.statSync(file).size;
+      if (size > 0) {
+        const fd = fs.openSync(file, "r");
+        const last = Buffer.alloc(1);
+        fs.readSync(fd, last, 0, 1, size - 1);
+        fs.closeSync(fd);
+        if (last[0] !== 0x0a) lead = "\n";
+      }
+    }
+    const fd = fs.openSync(file, "a");
+    try {
+      fs.writeSync(fd, lead + JSON.stringify(entry) + "\n");
+    } finally {
+      fs.closeSync(fd);
+    }
     return entry;
   }
 
@@ -315,24 +436,35 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
   /// before and after, for configs that must not sit in a shared file.
   function record(input) {
     if (!input || typeof input !== "object") throw new TypeError("record() needs an object");
-    const { system, actor, before, after, reason, eval: evaluation, ticket, redact } = input;
+    const { system, actor, before, after, reason, eval: evaluation, ticket, redact, commit } = input;
     if (!system || typeof system !== "string") throw new TypeError("record() needs a system name");
     if (!actor || typeof actor !== "string") throw new TypeError("record() needs an actor: who made the change");
     if (after === undefined) throw new TypeError("record() needs the config after the change");
 
-    const changes = diff(before, after);
+    // A redacted entry keeps hashes, not values, so the next redacted entry
+    // can only diff against those. `beforeRoots` and `beforeRoot` carry them
+    // forward when the caller (track) has no plaintext `before`.
+    const afterRoots = leafRootsOf(after);
+    const beforeRoots = before !== undefined ? leafRootsOf(before) : input.beforeRoots;
+    const changes = redact ? diffRoots(beforeRoots, afterRoots) : diff(before, after);
     const body = {
       kind: "change",
       system,
       actor,
       reason: reason || null,
       ticket: ticket || null,
-      beforeRoot: configRootOf(before),
+      commit: commit || null,
+      committedAt: input.committedAt || null,
+      recordedBy: input.recordedBy || null,
+      beforeRoot: before !== undefined ? configRootOf(before) : input.beforeRoot || null,
       configRoot: configRootOf(after),
-      changes: redact ? changes.map((c) => ({ key: c.key })) : changes,
+      changes,
       eval: evaluation === undefined ? null : evaluation,
     };
-    if (!redact) {
+    if (redact) {
+      body.redacted = true;
+      body.leafRoots = afterRoots;
+    } else {
       body.before = before === undefined ? null : before;
       body.after = after;
     }
@@ -354,6 +486,8 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
       system,
       actor: meta.actor || defaultActor(),
       before: last && last.after !== undefined ? last.after : undefined,
+      beforeRoot: last ? last.configRoot : null,
+      beforeRoots: last ? last.leafRoots || (last.after !== undefined ? leafRootsOf(last.after) : undefined) : undefined,
       after: config,
     });
   }
@@ -405,7 +539,12 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
     let published = null;
     if (upload) {
       const store = storage || require("../lib/storage");
-      published = await store.publish(fs.readFileSync(file, "utf8"), { kind: "audit-log" });
+      published = await store.publish(fs.readFileSync(file, "utf8"), { kind: "audit-log", upload: true });
+      // Asked to publish and could not: say so before spending gas, rather
+      // than anchor with no storage root and let the caller think it worked.
+      if (published.stored !== "0g") {
+        throw new Error("upload to 0G Storage failed, nothing was anchored: " + (published.note || "no uploader available"));
+      }
     }
 
     const head = check.head;
@@ -545,8 +684,10 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
             results.push({ seq: e.seq, source: "registry", ok: false, reason: "the log lists anchor #" + e.index + " but the registry does not hold it" });
           }
         }
+        // A verifier who pins an anchorer expects that key to have anchored
+        // this log. Finding nothing is a failure, not a footnote.
         if (history.length === 0 && pinnedAnchorers) {
-          warnings.push("the registry holds no anchors for this log from " + who);
+          results.push({ seq: null, source: "pin", ok: false, reason: "the registry holds no anchors for this log from " + who });
         }
       }
     }
@@ -594,6 +735,7 @@ module.exports = {
   defaultActor,
   verifyEntries,
   diff,
+  leafRootsOf,
   configRootOf,
   ANCHOR_TAG,
   REGISTRY_ABI,
