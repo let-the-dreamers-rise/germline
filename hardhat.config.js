@@ -29,9 +29,22 @@ module.exports = {
       chainId: 16601,
       accounts: DEPLOYER,
     },
+    // BOT Chain (botchain.ai), an EVM L1 with 0.75 s blocks. Mainnet is chain
+    // 677; Bohr is its public testnet (chain 968), with a faucet at
+    // faucet.botchain.ai. Same paris-targeted bytecode as 0G.
+    botchain: {
+      url: process.env.BOTCHAIN_RPC || "https://rpc.botchain.ai",
+      chainId: 677,
+      accounts: DEPLOYER,
+    },
+    bohr: {
+      url: process.env.BOHR_RPC || "https://rpc.bohr.life",
+      chainId: 968,
+      accounts: DEPLOYER,
+    },
   },
   etherscan: {
-    apiKey: { zerog: "none" },
+    apiKey: { zerog: "none", botchain: "none", bohr: "none" },
     customChains: [
       {
         network: "zerog",
@@ -39,6 +52,22 @@ module.exports = {
         urls: {
           apiURL: "https://chainscan.0g.ai/open/api",
           browserURL: "https://chainscan.0g.ai",
+        },
+      },
+      {
+        network: "botchain",
+        chainId: 677,
+        urls: {
+          apiURL: "https://scan.botchain.ai/api",
+          browserURL: "https://scan.botchain.ai",
+        },
+      },
+      {
+        network: "bohr",
+        chainId: 968,
+        urls: {
+          apiURL: "https://scan.bohr.life/api",
+          browserURL: "https://scan.bohr.life",
         },
       },
     ],

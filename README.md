@@ -396,6 +396,11 @@ Then open `web/index.html` to see the lineage and the fitness climb. It is a
 single static file with no build step; pass `?address=0x...` or edit the
 config block at the top.
 
+The same scripts run against BOT Chain (botchain.ai), another EVM L1: use
+`--network bohr` for its Bohr testnet (chain 968, faucet at
+faucet.botchain.ai) or `--network botchain` for mainnet (chain 677). The
+viewer takes `?network=bohr` the same way.
+
 `preflight` is worth running first. It confirms the RPC is the chain it claims
 to be, prices the deployment from the real compiled bytecode, and tells you
 whether the account can afford the run -- all read-only.

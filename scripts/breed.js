@@ -81,6 +81,30 @@ async function waitForSeed(germline, parentId, provider, log) {
   );
 }
 
+// eth_call and gas estimation run against the latest block, where
+// block.number is still the request block if no new block has landed since the
+// request was mined. On 0G that rarely happens; on BOT Chain the script often
+// reaches the reveal before the next block. The contract then rightly says
+// TooEarly. waitForSeed polls through it, and the spawn is retried the same way
+// in case the estimate is made against that same block. The seed is fixed by
+// then, so a retry can only ever mint the one child the seed allows.
+function isTooEarly(error) {
+  return revertName(error) === "TooEarly";
+}
+
+async function sendSpawn(germline, parentId, childRoot, log) {
+  const tries = pollTries();
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await germline.spawn(parentId, childRoot);
+    } catch (error) {
+      if (!isTooEarly(error) || attempt >= tries) throw error;
+      log("  spawn: node behind the seeding block, retrying (attempt " + attempt + ")");
+      await sleep(pollDelay());
+    }
+  }
+}
+
 async function breed(options = {}) {
   const log = options.log || console.log;
   const network = hre.network.name;
@@ -220,7 +244,7 @@ async function breed(options = {}) {
     );
   }
 
-  const spawnTx = await germline.spawn(parent.id, childRoot);
+  const spawnTx = await sendSpawn(germline, parent.id, childRoot, log);
   const spawnReceipt = await spawnTx.wait();
   const spawned = eventFrom(germline, spawnReceipt, "Spawned");
   const childId = Number(spawned.id);
