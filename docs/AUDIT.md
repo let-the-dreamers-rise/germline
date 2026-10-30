@@ -37,46 +37,23 @@ anchoring and that record is itself covered by the next anchor.
 
 ## In CI
 
-Record on every merge that touches a config, verify on every build, anchor
-on a schedule. A GitHub Actions example:
+`npx germline init` writes `.github/workflows/germline.yml`, which uses the
+Germline GitHub Action (`action.yml` at the root of this repository). On
+every push it verifies the existing log, records whatever changed in the
+tracked files, anchors on 0G if `GERMLINE_ANCHOR_KEY` is set, and commits the
+updated log back with `[skip ci]`.
 
-```yaml
-name: ai-config-audit
-on:
-  push:
-    branches: [main]
-    paths: ["config/agent.json"]
-  schedule:
-    - cron: "0 3 * * *"
+| input | default | meaning |
+|---|---|---|
+| `anchor-key` | empty | funded 0G key; empty means record and verify only |
+| `registry` | shipped deployment | GermlineAnchor address |
+| `upload` | `false` | also publish the log to 0G Storage |
+| `commit` | `true` | commit the updated log back to the branch |
+| `rpc` | `https://evmrpc.0g.ai` | 0G Chain RPC |
 
-jobs:
-  audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 2 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: npm install -g germline
-      - run: germline verify
-      - if: github.event_name == 'push'
-        run: |
-          git show HEAD~1:config/agent.json > /tmp/before.json
-          germline record --system support-agent \
-            --actor "${{ github.actor }}" --ticket "${{ github.sha }}" \
-            --before /tmp/before.json --after config/agent.json \
-            --reason "$(git log -1 --pretty=%s)"
-      - if: github.event_name == 'schedule'
-        run: germline anchor --upload
-        env:
-          DEPLOYER_KEY: ${{ secrets.ZEROG_KEY }}
-      - run: |
-          git config user.name germline-bot
-          git config user.email germline-bot@users.noreply.github.com
-          git add .germline/audit.jsonl
-          git commit -m "audit: record config change" || true
-          git push
-```
+The files to track live in `.germline/config.json`; edit the list there.
+JSON files are diffed setting by setting, anything else as text, and a
+deleted file is recorded as a change to `null`.
 
 Commit the log to the repository it describes. Git history then becomes a
 second, independent copy, and the anchor makes both checkable.

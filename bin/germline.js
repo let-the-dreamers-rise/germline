@@ -3,6 +3,8 @@
 
 // germline: record, verify, anchor and report AI configuration changes.
 //
+//   germline init                      set a repo up in one command
+//   germline track                     record what changed in tracked files
 //   germline record --system support-agent --actor ash --after config.json \
 //                   [--before old.json] [--reason "..."] [--ticket JIRA-12] \
 //                   [--score 0.91] [--baseline 0.84] [--suite refunds-v4] [--redact]
@@ -21,6 +23,7 @@
 const fs = require("fs");
 const { openAuditLog } = require("../sdk/audit");
 const { renderMarkdown } = require("../sdk/report");
+const track = require("../sdk/track");
 
 const path = require("path");
 
@@ -91,33 +94,47 @@ function number(value, label) {
   return n;
 }
 
+function anchorKey() {
+  return process.env.GERMLINE_ANCHOR_KEY || process.env.DEPLOYER_KEY || null;
+}
+
 function signerFromEnv() {
-  const key = process.env.DEPLOYER_KEY;
-  if (!key) throw new Error("set DEPLOYER_KEY to a funded 0G key to anchor; an anchor is an on-chain transaction");
+  const key = anchorKey();
+  if (!key) throw new Error("set GERMLINE_ANCHOR_KEY (or DEPLOYER_KEY) to a funded 0G key to anchor; an anchor is an on-chain transaction");
   const { JsonRpcProvider, Wallet } = require("ethers");
   return new Wallet(key, new JsonRpcProvider(DEFAULT_RPC));
 }
 
 const HELP = `germline -- a tamper-evident audit trail for AI configuration changes
 
+  germline init [--files a.md,b.json] [--system <name>] [--redact] [--no-workflow]
+                  find your prompt and config files, write the CI workflow, record a baseline
+  germline track  record whatever changed in the tracked files since last time
+
   germline record --system <name> --actor <who> --after <config.json>
                   [--before <old.json>] [--reason <text>] [--ticket <id>]
                   [--score <n>] [--baseline <n>] [--suite <name>] [--redact]
   germline verify [--chain] [--strict] [--log-id <id>] [--anchorer <0x..>]
-  germline anchor [--upload] [--registry <0x..>]
+  germline anchor [--upload] [--registry <0x..>] [--if-key]
   germline id
   germline report [--out <file.md>] [--title <text>] [--chain]
   germline log
 
   --log <file>   audit log to use (default .germline/audit.jsonl)
 
-Environment: DEPLOYER_KEY (anchor), ZEROG_RPC (default https://evmrpc.0g.ai),
+Environment: GERMLINE_ANCHOR_KEY or DEPLOYER_KEY (anchor), ZEROG_RPC (default https://evmrpc.0g.ai),
 GERMLINE_ACTOR (default --actor), GERMLINE_REGISTRY (anchor registry). anchor --upload also publishes the log to
 0G Storage; install @0gfoundation/0g-storage-ts-sdk for that.`;
 
 async function main() {
   const { command, flags } = parse(process.argv.slice(2));
-  const file = flags.log && flags.log !== true ? flags.log : ".germline/audit.jsonl";
+  let file = flags.log && flags.log !== true ? flags.log : null;
+  if (!file) {
+    try {
+      file = track.loadConfig().log || null;
+    } catch (ignored) {}
+  }
+  file = file || ".germline/audit.jsonl";
   const log = openAuditLog(file);
 
   switch (command) {
@@ -165,7 +182,43 @@ async function main() {
       }      return;
     }
 
+    case "init": {
+      const report = track.init({
+        files: flags.files && flags.files !== true ? flags.files.split(",").map((f) => f.trim()).filter(Boolean) : undefined,
+        system: flags.system && flags.system !== true ? flags.system : undefined,
+        redact: flags.redact === true,
+        workflow: flags["no-workflow"] !== true,
+      });
+      console.log("germline is set up.\n");
+      console.log("  tracking:  " + report.files.join(", "));
+      console.log("  config:    .germline/config.json (" + report.config + ")");
+      if (report.workflow) console.log("  workflow:  .github/workflows/germline.yml (" + report.workflow + ")");
+      console.log("  baseline:  " + (report.baseline.length ? report.baseline.length + " system(s) recorded" : "already recorded"));
+      console.log("\nNext:");
+      console.log("  1. Check the file list in .germline/config.json");
+      console.log("  2. git add .germline .github && git commit -m \"Track AI config with germline\" && git push");
+      console.log("  3. Optional: add a funded 0G key as the repo secret GERMLINE_ANCHOR_KEY to anchor on chain");
+      return;
+    }
+
+    case "track": {
+      const { written } = track.trackAll({
+        actor: flags.actor && flags.actor !== true ? flags.actor : undefined,
+        reason: flags.reason && flags.reason !== true ? flags.reason : undefined,
+        ticket: flags.ticket && flags.ticket !== true ? flags.ticket : undefined,
+      });
+      if (!written.length) console.log("no tracked config changed");
+      for (const e of written) {
+        console.log("recorded #" + e.seq + "  " + e.system + "  " + (e.changes.map((c) => c.key).join(", ") || "baseline") + "  " + e.actor);
+      }
+      return;
+    }
+
     case "anchor": {
+      if (flags["if-key"] && !anchorKey()) {
+        console.log("no anchor key set; skipping the on-chain anchor (the log is still recorded and verified)");
+        return;
+      }
       const signer = signerFromEnv();
       const registry = await registryFor(flags, signer.provider);
       const entry = await log.anchor({ signer, upload: flags.upload === true, registry: registry || undefined });

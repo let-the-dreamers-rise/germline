@@ -1,0 +1,73 @@
+name: Germline AI config audit trail
+description: Record every change to your prompts and AI config in a tamper-evident log, verify it, and anchor it on 0G.
+branding:
+  icon: shield
+  color: green
+
+inputs:
+  anchor-key:
+    description: Funded 0G private key, from a repository secret. Optional; without it changes are recorded and verified but not anchored.
+    required: false
+    default: ""
+  registry:
+    description: GermlineAnchor registry address. Defaults to the deployment shipped with Germline for the chain.
+    required: false
+    default: ""
+  upload:
+    description: Also publish the log to 0G Storage when anchoring.
+    required: false
+    default: "false"
+  commit:
+    description: Commit the updated log back to the branch.
+    required: false
+    default: "true"
+  rpc:
+    description: 0G Chain RPC URL.
+    required: false
+    default: https://evmrpc.0g.ai
+
+runs:
+  using: composite
+  steps:
+    - name: Install germline
+      shell: bash
+      run: npm install --omit=dev --no-audit --no-fund --prefix "${{ github.action_path }}" >/dev/null
+
+    - name: Verify the existing log
+      shell: bash
+      run: |
+        if [ -f .germline/config.json ] || [ -f .germline/audit.jsonl ]; then
+          node "${{ github.action_path }}/bin/germline.js" verify
+        fi
+
+    - name: Record changes
+      shell: bash
+      run: |
+        if [ ! -f .germline/config.json ]; then
+          echo "::error::No .germline/config.json. Run 'npx germline init' in the repository first."
+          exit 1
+        fi
+        node "${{ github.action_path }}/bin/germline.js" track
+
+    - name: Anchor on 0G
+      shell: bash
+      env:
+        GERMLINE_ANCHOR_KEY: ${{ inputs.anchor-key }}
+        GERMLINE_REGISTRY: ${{ inputs.registry }}
+        ZEROG_RPC: ${{ inputs.rpc }}
+        UPLOAD: ${{ inputs.upload }}
+      run: |
+        args="--if-key"
+        if [ "$UPLOAD" = "true" ]; then args="$args --upload"; fi
+        node "${{ github.action_path }}/bin/germline.js" anchor $args
+
+    - name: Commit the log
+      if: inputs.commit == 'true' && github.event_name == 'push'
+      shell: bash
+      run: |
+        git add .germline/audit.jsonl
+        if git diff --cached --quiet; then exit 0; fi
+        git config user.name "germline[bot]"
+        git config user.email "germline-bot@users.noreply.github.com"
+        git commit -m "audit: record AI config changes [skip ci]"
+        git push

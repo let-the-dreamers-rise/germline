@@ -13,29 +13,61 @@ detection, and pins it on 0G Chain so it cannot be rewritten after the fact
 either. The output is an evidence pack an auditor can verify themselves,
 without trusting you or us.
 
+## Five-minute setup
+
+In the repository that holds your prompts and AI config:
+
 ```bash
-npm install germline
-
-npx germline record --system support-agent --actor ash@acme.com \
-  --before prompts/v3.json --after prompts/v4.json \
-  --reason "fewer wrong refund answers" --ticket GOV-112 \
-  --score 0.91 --baseline 0.84 --suite refunds-v4
-
-npx germline verify            # exit 1 if anyone edited the log
-npx germline anchor --upload   # pin the head on 0G Chain, log to 0G Storage
-npx germline verify --chain --log-id 0x… --anchorer 0x…   # what an auditor runs
-npx germline report --out evidence.md
+npx germline init        # finds prompt/config files, writes the CI workflow, records a baseline
+git add .germline .github && git commit -m "Track AI config with germline" && git push
 ```
 
-Or from code:
+(Until the package is on npm, use `npx github:let-the-dreamers-rise/germline init`.)
+
+That is the whole setup. From the next push on, every change to those files
+is recorded with who made it (the CI identity), why (the commit message),
+which commit, and exactly which setting moved. No wallet, no account, no
+before/after files, nothing in your request path.
+
+Anchoring on 0G is one optional step: add a funded 0G key as the repository
+secret `GERMLINE_ANCHOR_KEY`. Until you do, the log is still recorded and
+verified on every push; it is just not yet pinned on chain.
+
+The workflow `init` writes is three lines of real content, using the
+Germline GitHub Action:
+
+```yaml
+- uses: actions/checkout@v4
+- uses: let-the-dreamers-rise/germline@main
+  with:
+    anchor-key: ${{ secrets.GERMLINE_ANCHOR_KEY }}   # optional
+```
+
+Then, whenever someone asks:
+
+```bash
+npx germline report --out evidence.md        # the evidence pack for your auditor
+npx germline verify --chain --log-id 0x… --anchorer 0x…   # what the auditor runs
+```
+
+### If your config lives in code, not files
+
+Call `track()` wherever the config is loaded or deployed. It records only when
+the config actually changed, so it is safe on every start-up:
 
 ```js
 const { openAuditLog } = require("germline");
 
-const log = openAuditLog(".germline/audit.jsonl");
-log.record({ system: "support-agent", actor: "ci", before, after, reason, eval: { score } });
-log.verify();                    // { ok, entries, head, problems }
-await log.anchor({ signer });    // one 0G transaction, no contract to deploy
+openAuditLog().track("support-agent", config, { reason: "deploy " + process.env.GIT_SHA });
+```
+
+### Recording by hand
+
+```bash
+npx germline record --system support-agent --actor ash@acme.com \
+  --before prompts/v3.json --after prompts/v4.json \
+  --reason "fewer wrong refund answers" --ticket GOV-112 \
+  --score 0.91 --baseline 0.84 --suite refunds-v4
 ```
 
 ## Who it is for

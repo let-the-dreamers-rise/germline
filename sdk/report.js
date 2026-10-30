@@ -36,7 +36,10 @@ const CONTROLS = [
 
 function cell(value) {
   if (value === null || value === undefined || value === "") return "-";
-  const text = typeof value === "string" ? value : JSON.stringify(value);
+  let text = typeof value === "string" ? value : JSON.stringify(value);
+  // A whole prompt in a table cell makes the pack unreadable. Show its start
+  // and size; the full text stays in the log, under its hash.
+  if (text.length > 120) text = text.slice(0, 80) + "… (" + text.length + " chars)";
   return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 

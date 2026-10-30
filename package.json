@@ -29,12 +29,13 @@
     "README.md",
     "LICENSE",
     "docs/",
-    "SECURITY.md"
+    "SECURITY.md",
+    "action.yml"
   ],
   "scripts": {
     "build": "hardhat compile",
     "test": "hardhat test",
-    "test:sdk": "mocha test/audit.test.js test/storage.test.js",
+    "test:sdk": "mocha test/audit.test.js test/storage.test.js test/track.test.js",
     "bench": "node scripts/benchmark.js",
     "example:rag": "node examples/prompt-config.js",
     "example:pricing": "node examples/pricing-rules.js",

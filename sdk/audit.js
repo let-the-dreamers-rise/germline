@@ -251,6 +251,23 @@ function timestampProblem(all, coveredEntries, blockTimeSec) {
   return null;
 }
 
+// Who to credit when the caller does not say: an explicit setting first, then
+// the CI system's identity, then the local git user. CI identities are the
+// trustworthy ones, because branch protection stands behind them.
+function defaultActor() {
+  const env = process.env;
+  if (env.GERMLINE_ACTOR) return env.GERMLINE_ACTOR;
+  if (env.GITHUB_ACTOR) return "github:" + env.GITHUB_ACTOR;
+  if (env.GITLAB_USER_LOGIN) return "gitlab:" + env.GITLAB_USER_LOGIN;
+  try {
+    const email = require("child_process")
+      .execFileSync("git", ["config", "user.email"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+      .trim();
+    if (email) return email;
+  } catch (ignored) {}
+  return env.USER || env.USERNAME || "unknown";
+}
+
 function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}) {
   const clock = options.clock || (() => new Date().toISOString());
 
@@ -320,6 +337,33 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
       body.after = after;
     }
     return append(body);
+  }
+
+  /// Record `config` for `system` only if it differs from the last config
+  /// recorded for that system. The call to put wherever a config is loaded or
+  /// deployed: it is a no-op on every run where nothing changed, so it can sit
+  /// on a hot path without filling the log. Returns the entry, or null.
+  ///
+  ///     openAuditLog().track("support-agent", config, { actor: "deploy-bot" });
+  function track(system, config, meta = {}) {
+    const root = configRootOf(config);
+    const last = lastChange(system);
+    if (last && last.configRoot === root) return null;
+    return record({
+      ...meta,
+      system,
+      actor: meta.actor || defaultActor(),
+      before: last && last.after !== undefined ? last.after : undefined,
+      after: config,
+    });
+  }
+
+  function lastChange(system) {
+    const all = entries();
+    for (let i = all.length - 1; i >= 0; i--) {
+      if (all[i] && all[i].kind === "change" && all[i].system === system) return all[i];
+    }
+    return null;
   }
 
   /// Record a search run from search() or optimise() as the evidence for
@@ -542,11 +586,12 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
     return (await verifyChain(provider, options)).results;
   }
 
-  return { file, entries, record, recordSearch, verify, anchor, verifyChain, verifyAnchors };
+  return { file, entries, record, track, lastChange, recordSearch, verify, anchor, verifyChain, verifyAnchors };
 }
 
 module.exports = {
   openAuditLog,
+  defaultActor,
   verifyEntries,
   diff,
   configRootOf,
