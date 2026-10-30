@@ -81,13 +81,13 @@ async function waitForSeed(germline, parentId, provider, log) {
   );
 }
 
-// A public RPC can sit behind a load balancer, and its nodes are not always
-// at the same height. On BOT Chain (0.75 s blocks) the node that answered
-// mutationSeedFor can be a block ahead of the node that estimates the spawn,
-// which then still sees the request block as the newest one and reverts with
-// TooEarly. The seed is already fixed by then, so retrying the same spawn is
-// safe: it can only ever mint the one child the seed allows. The same lag hits
-// mutationSeedFor, which waitForSeed already polls through.
+// eth_call and gas estimation run against the latest block, where
+// block.number is still the request block if no new block has landed since the
+// request was mined. On 0G that rarely happens; on BOT Chain the script often
+// reaches the reveal before the next block. The contract then rightly says
+// TooEarly. waitForSeed polls through it, and the spawn is retried the same way
+// in case the estimate is made against that same block. The seed is fixed by
+// then, so a retry can only ever mint the one child the seed allows.
 function isTooEarly(error) {
   return revertName(error) === "TooEarly";
 }
