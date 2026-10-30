@@ -81,6 +81,33 @@ async function waitForSeed(germline, parentId, provider, log) {
   );
 }
 
+// A public RPC can sit behind a load balancer, and its nodes are not always
+// at the same height. On BOT Chain (0.75 s blocks) the node that answered
+// mutationSeedFor can be a block ahead of the node that estimates the spawn,
+// which then still sees the request block as the newest one and reverts with
+// TooEarly. The seed is already fixed by then, so retrying the same spawn is
+// safe: it can only ever mint the one child the seed allows.
+const TOO_EARLY = "0x085de625";
+
+function isTooEarly(error) {
+  if (revertName(error) === "TooEarly") return true;
+  const text = String((error && (error.data || error.shortMessage || error.message)) || "");
+  return text.includes(TOO_EARLY);
+}
+
+async function sendSpawn(germline, parentId, childRoot, log) {
+  const tries = pollTries();
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await germline.spawn(parentId, childRoot);
+    } catch (error) {
+      if (!isTooEarly(error) || attempt >= tries) throw error;
+      log("  spawn: node behind the seeding block, retrying (attempt " + attempt + ")");
+      await sleep(pollDelay());
+    }
+  }
+}
+
 async function breed(options = {}) {
   const log = options.log || console.log;
   const network = hre.network.name;
@@ -220,7 +247,7 @@ async function breed(options = {}) {
     );
   }
 
-  const spawnTx = await germline.spawn(parent.id, childRoot);
+  const spawnTx = await sendSpawn(germline, parent.id, childRoot, log);
   const spawnReceipt = await spawnTx.wait();
   const spawned = eventFrom(germline, spawnReceipt, "Spawned");
   const childId = Number(spawned.id);
