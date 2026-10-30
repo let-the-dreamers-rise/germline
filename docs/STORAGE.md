@@ -91,19 +91,41 @@ locator.
 
 ## Uploading for real
 
+Upload tries, in order:
+
+1. **`@0gfoundation/0g-storage-ts-sdk`**, the maintained TypeScript SDK, in
+   process: `new MemData(bytes)` then `Indexer.upload(file, rpc, signer)`. No
+   temp file, no binary. It pins `ethers` 6.13.1 as a peer, so install it with
+   `npm install @0gfoundation/0g-storage-ts-sdk --legacy-peer-deps`; it works
+   with the ethers 6.17 this project uses. It is an optional peer rather than
+   a dependency so a team that only wants local audit logs never meets that.
+2. **`0g-storage-client`** on PATH, as before.
+3. **Local**, at `.germline/storage/` in the working directory (override with
+   `GERMLINE_STORAGE_DIR`). It used to sit inside the package directory,
+   which is inside `node_modules` once installed from npm.
+
 ```bash
-# install the official client, then
+# audit trail: publish the log and anchor its head
+DEPLOYER_KEY=0x... npx germline anchor --upload
+
+# lineage scripts
 export ZEROG_STORAGE_UPLOAD=1
 npx hardhat run scripts/found.js --network zerog
 ```
 
-Without the client installed, the same command runs and reports
-`0g-storage-client is not installed`, storing locally. Nothing breaks either
-way, which is the point.
+With the SDK installed, `storageRootOf(bytes)` computes the 0G merkle root
+locally before anything is sent, so a record can carry its storage locator
+even if the upload happens later. `test/storage.test.js` pins that root
+against the SDK's own output.
+
+Without either uploader, the same commands run and report what happened,
+storing locally. Nothing breaks either way, which is the point.
 
 ## Honest summary
 
 - 0G Storage **read**: implemented against the live mainnet gateway, verified.
-- 0G Storage **write**: routed through the official client, opt-in, untested
-  end to end because it requires a funded key. Falls back to local, loudly.
+- 0G Storage **write**: in process through the maintained TS SDK, or the
+  official client binary. Opt-in. Root computation is tested; a real mainnet
+  upload still needs a funded key and has not been run. Falls back to local,
+  loudly.
 - 0G **Chain**: fully integrated. This is where the load-bearing state lives.

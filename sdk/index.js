@@ -84,9 +84,18 @@ async function search(trial, options = {}) {
 const { compileSchema, cardinality, TYPES: GENE_TYPES } = require("./genes");
 const { canonical, rootOf, evidenceRootOf, stableStringify } = require("./canonical");
 const { localSeed } = require("./seed");
+const { openAuditLog, verifyEntries, diff } = require("./audit");
+const { renderMarkdown } = require("./report");
 
 module.exports = {
-  // The two calls almost every integration needs.
+  // The audit trail: record a config change, verify the log, anchor it on
+  // 0G, render the evidence pack. This is what most customers buy.
+  openAuditLog,
+  verifyEntries,
+  diff,
+  renderMarkdown,
+
+  // The two calls almost every search integration needs.
   defineTrial,
   search,
 
