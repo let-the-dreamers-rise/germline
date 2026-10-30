@@ -1,14 +1,87 @@
 # Germline
 
-### Tune your AI's settings automatically. Prove how you got there.
+### The audit trail for AI configuration changes. Anchored on 0G, checkable by anyone.
 
-Your agent has twenty knobs and you tuned three of them. Germline turns the
-rest, using the eval you already have, and hands back a configuration that
-scores higher -- with a receipt anyone can check without taking your word
-for it.
+Your AI system changes every week: a new prompt, a different model, a lower
+temperature, a retrieval tweak. When a customer, an auditor or a regulator
+asks *what was live on 14 March, who changed it, and what evidence justified
+the change*, most teams answer with a Slack search and a good memory.
+
+Germline records every configuration change -- who, what, why, and the eval
+that justified it -- in a hash-chained log that cannot be edited without
+detection, and pins it on 0G Chain so it cannot be rewritten after the fact
+either. The output is an evidence pack an auditor can verify themselves,
+without trusting you or us.
+
+```bash
+npm install germline
+
+npx germline record --system support-agent --actor ash@acme.com \
+  --before prompts/v3.json --after prompts/v4.json \
+  --reason "fewer wrong refund answers" --ticket GOV-112 \
+  --score 0.91 --baseline 0.84 --suite refunds-v4
+
+npx germline verify            # exit 1 if anyone edited the log
+npx germline anchor --upload   # pin the head on 0G Chain, log to 0G Storage
+npx germline report --out evidence.md
+```
+
+Or from code:
 
 ```js
-const { defineTrial, search } = require("germline");
+const { openAuditLog } = require("germline");
+
+const log = openAuditLog(".germline/audit.jsonl");
+log.record({ system: "support-agent", actor: "ci", before, after, reason, eval: { score } });
+log.verify();                    // { ok, entries, head, problems }
+await log.anchor({ signer });    // one 0G transaction, no contract to deploy
+```
+
+## Who it is for
+
+Teams shipping AI features into regulated or enterprise customers, who now
+get asked for change records:
+
+- **EU AI Act.** High-risk systems must keep automatically generated logs
+  (Art. 12) and retain them (Art. 19). Config changes are the part most teams
+  are not logging at all.
+- **SOC 2 change management (CC8.1).** Auditors want each change tied to an
+  actor, an approval and test evidence. For prompts and model settings that
+  usually lives nowhere.
+- **Enterprise security reviews.** "How do you control changes to the
+  model's behaviour?" is now a standard questionnaire line.
+
+Germline produces supporting evidence for these. It does not make you
+compliant on its own, and the evidence pack says so.
+
+## Why the record holds up
+
+- **Hash chain.** Every entry carries the hash of the one before it. Edit,
+  delete or reorder one and `germline verify` fails, offline, for anyone.
+- **Anchor on 0G Chain.** The head hash goes into a 0G transaction, so even
+  whoever holds the file cannot rewrite history consistently after that
+  point. No contract, nothing upgradeable, about the cost of a transfer.
+- **Copy on 0G Storage.** `anchor --upload` publishes the log through the
+  official `@0gfoundation/0g-storage-ts-sdk`, so an auditor can fetch it
+  without asking you for a copy.
+- **Redaction.** `--redact` keeps only the hashes of before and after, for
+  system prompts that must not sit in a shared file. You can still prove
+  later which config was live, given the config.
+
+A vendor's own dashboard is the vendor asserting something about itself.
+This is a record the vendor cannot quietly change, which is what an auditor
+is actually asking for. See [docs/AUDIT.md](docs/AUDIT.md) for the format,
+the CI setup and the threat model.
+
+## Also in the box: config search with an honest control
+
+Germline started as a configuration search tool, and that is still here.
+Give it the eval you already have and it will look for a better
+configuration -- and record the run in the same audit trail, so the change
+you ship carries the evidence that produced it.
+
+```js
+const { defineTrial, search, openAuditLog } = require("germline");
 
 const trial = defineTrial({
   name: "support-agent",
@@ -21,44 +94,16 @@ const trial = defineTrial({
 });
 
 const run = await search(trial, { budget: 40 });
-run.best.config;      // ship this
-run.verdict.winner;   // and here is whether it actually beat random
+run.verdict.winner;   // 'search' | 'random' | 'tied' -- the control runs by default
+openAuditLog().recordSearch(run, { system: "support-agent", actor: "ci", before: current });
 ```
-
-That is the whole integration. No wallet, no account, no data leaving your
-machine, nothing in your request path. Sixty seconds from `npm install` to a
-better configuration.
 
 On a real system -- the world model of an agent that plays ARC-AGI-3 -- it
-took a configuration scoring 3148 to one scoring 4765, and the answer it found
-is one a competent engineer would not have guessed. Details below.
+took a configuration scoring 3148 to one scoring 4765. On small spaces random
+sampling does as well or better, and the tool tells you so. The rest of this
+README covers the search and the on-chain lineage registry in detail.
 
-Turn on provenance when you need to show someone. That part uses 0G Chain, and
-it is the reason a chain is involved at all: a customer verifies the record
-themselves rather than trusting the vendor who produced it.
-
-```js
-const { defineTrial, optimise } = require("germline");
-
-const trial = defineTrial({
-  name: "support-agent-v3",
-  genes: {
-    retrievalDepth: { type: "int", min: 1, max: 12 },
-    rerank: { type: "bool" },
-    temperature: { type: "choice", options: [0, 0.3, 0.7] },
-    toolPolicy: { type: "choice", options: ["eager", "lazy", "never"] },
-  },
-  evaluate: async (config) => ({ score: await runEvalSet(config) }),
-});
-
-const run = await optimise(trial, { generations: 8 });
-```
-
-That is the whole integration. `evaluate` is yours -- an offline eval set,
-a shadow-traffic replay, a live metric window. Germline never needs to know
-what your system does, only how to score it.
-
-## The problem
+## Search: the problem it addresses
 
 Two things are true of nearly every team shipping an AI feature.
 
@@ -248,7 +293,8 @@ generations.
 
 ## Which parts of 0G are used
 
-**0G Chain** carries the registry. `contracts/Germline.sol` is an ERC-721
+**0G Chain** carries the audit-log anchors -- one tagged transaction per
+anchor, no contract -- and the lineage registry. `contracts/Germline.sol` is an ERC-721
 where each token is a configuration with its parent, generation, mutation
 seed, genome root and attested fitness. Mainnet, chain 16661. The contract
 compiles to 11,381 bytes and deploys for about 0.0095 0G.
@@ -257,10 +303,12 @@ compiles to 11,381 bytes and deploys for about 0.0095 0G.
 transcripts, with the chain carrying their roots. The read path runs against
 the live mainnet gateway and is verified -- `node scripts/storage-check.js`
 probes it, round-trips a payload, and confirms an unknown root comes back as a
-miss. Writing goes through the official `0g-storage-client`, because uploading
-is an on-chain submission to the Flow contract rather than an HTTP POST; the
-endpoint a web search reports for that purpose returns 404, which is why it
-was probed rather than trusted.
+miss. Writing goes through the maintained `@0gfoundation/0g-storage-ts-sdk`
+in process, or the `0g-storage-client` binary if that is what is installed,
+because uploading is an on-chain submission to the Flow contract rather than
+an HTTP POST; the endpoint a web search reports for that purpose returns 404,
+which is why it was probed rather than trusted. The audit trail uses it to
+publish each anchored log.
 
 An object's identity is the keccak256 of its canonical JSON, computed locally,
 so verification never depends on any network being reachable. `docs/STORAGE.md`
@@ -295,7 +343,9 @@ Agentic ID rather than replacing the standard.
 Use it in your own project:
 
 ```bash
-npm install github:<your-org>/germline
+npm install germline
+# optional, to publish to 0G Storage (its ethers peer pin needs the flag)
+npm install @0gfoundation/0g-storage-ts-sdk --legacy-peer-deps
 ```
 
 ```js
@@ -316,7 +366,8 @@ Or work on it directly:
 
 ```bash
 npm install
-npm test                  # 45 tests
+npm test                  # 45 contract and engine tests
+npm run test:sdk          # audit trail, CLI and storage, no chain needed
 npm run bench             # the search against its random control
 npm run example:rag       # tune a RAG agent, no chain needed
 npm run example:pricing   # tune pricing rules, no model needed
@@ -372,11 +423,13 @@ Stated plainly, because the edges matter more than the pitch.
 - **An attestor is trusted to report honestly.** The evidence root makes a
   score reproducible by anyone who fetches the transcript, so dishonesty is
   detectable after the fact -- but it is not prevented at the point of writing.
-- **0G Storage upload is opt-in and untested end to end.** Reading is verified
-  against the live mainnet gateway. Writing routes through the official client
-  and needs a funded key, so it is behind `ZEROG_STORAGE_UPLOAD=1` rather than
-  spending gas on every spawn. Without it, payloads are stored locally and say
-  so. Roots stay valid either way.
+- **0G Storage upload has not yet been run against mainnet.** Reading is
+  verified against the live mainnet gateway. Writing now goes in process
+  through the maintained `@0gfoundation/0g-storage-ts-sdk` (or the
+  `0g-storage-client` binary), and the SDK's root computation is pinned in a
+  test, but a real upload needs a funded key and has not been done yet. It
+  stays opt-in (`anchor --upload`, or `ZEROG_STORAGE_UPLOAD=1` for lineage
+  scripts) rather than spending gas silently. Roots stay valid either way.
 - **No ERC-7857 oracle transfer.** As above: linkage, not reimplementation.
 - **Search is not guaranteed to find the global optimum.** It is an
   evolutionary search over a combinatorial space, and eight generations on the
@@ -386,8 +439,10 @@ Stated plainly, because the edges matter more than the pitch.
 ## Repository
 
 ```
+bin/germline.js            the CLI: record, verify, anchor, report, log
 contracts/Germline.sol     the registry: lineage, seeds, fitness, selection
-sdk/                       defineTrial and optimise -- the public API
+sdk/audit.js, report.js    the audit trail and the evidence pack
+sdk/                       defineTrial and optimise -- the search API
 engine/                    the reference trial and its measured fitness
 examples/                  a RAG agent and a pricing ladder
 scripts/                   preflight, deploy, found, breed, verify, status
