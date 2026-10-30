@@ -86,13 +86,10 @@ async function waitForSeed(germline, parentId, provider, log) {
 // mutationSeedFor can be a block ahead of the node that estimates the spawn,
 // which then still sees the request block as the newest one and reverts with
 // TooEarly. The seed is already fixed by then, so retrying the same spawn is
-// safe: it can only ever mint the one child the seed allows.
-const TOO_EARLY = "0x085de625";
-
+// safe: it can only ever mint the one child the seed allows. The same lag hits
+// mutationSeedFor, which waitForSeed already polls through.
 function isTooEarly(error) {
-  if (revertName(error) === "TooEarly") return true;
-  const text = String((error && (error.data || error.shortMessage || error.message)) || "");
-  return text.includes(TOO_EARLY);
+  return revertName(error) === "TooEarly";
 }
 
 async function sendSpawn(germline, parentId, childRoot, log) {
