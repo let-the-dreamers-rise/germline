@@ -97,9 +97,12 @@ function loadConfig(cwd = process.cwd(), file = CONFIG_FILE) {
 /// Who, why and which commit, from whatever CI or git can tell us.
 function commitContext(cwd = process.cwd()) {
   const env = process.env;
-  const sha = env.GITHUB_SHA || env.CI_COMMIT_SHA || git(["rev-parse", "HEAD"], cwd);
+  // The repository being tracked is the authority on its own commit; CI
+  // variables are the fallback for checkouts git cannot read.
+  const local = git(["rev-parse", "HEAD"], cwd);
+  const sha = local || env.GITHUB_SHA || env.CI_COMMIT_SHA || null;
   const subject = git(["log", "-1", "--pretty=%s"], cwd);
-  const repo = env.GITHUB_REPOSITORY || null;
+  const repo = local && env.GITHUB_SHA && local !== env.GITHUB_SHA ? null : env.GITHUB_REPOSITORY || null;
   return {
     reason: subject || null,
     ticket: sha ? (repo ? repo + "@" + sha.slice(0, 12) : sha.slice(0, 12)) : null,

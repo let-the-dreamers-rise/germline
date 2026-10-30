@@ -27,11 +27,18 @@ const FILES = {
 };
 
 describe("init and track", function () {
+  // CI sets these for the germline repository itself; the temporary repos
+  // here are different repositories, so hide them.
+  const CI_VARS = ["GITHUB_SHA", "GITHUB_REPOSITORY", "GITHUB_ACTOR", "CI_COMMIT_SHA", "GERMLINE_ANCHOR_KEY", "DEPLOYER_KEY"];
+  let saved;
   beforeEach(function () {
+    saved = Object.fromEntries(CI_VARS.map((k) => [k, process.env[k]]));
+    for (const k of CI_VARS) delete process.env[k];
     process.env.GERMLINE_ACTOR = "test-actor";
   });
   afterEach(function () {
     delete process.env.GERMLINE_ACTOR;
+    for (const [k, v] of Object.entries(saved)) if (v !== undefined) process.env[k] = v;
   });
 
   it("finds prompt and agent config files, and skips the rest", function () {
