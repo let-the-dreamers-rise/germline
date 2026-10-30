@@ -58,6 +58,11 @@ function code(value) {
   return "`" + value + "`";
 }
 
+// A path pasted into a shell command: shown as-is only if it is plainly safe.
+function shellPath(p) {
+  return /^[\w./-]+$/.test(p) ? p : "<path to audit.jsonl>";
+}
+
 function evalSummary(evaluation) {
   if (!evaluation) return "-";
   const parts = [];
@@ -75,41 +80,52 @@ function describeChange(c, entry) {
   return c.key + ": " + (c.from === undefined ? "-" : JSON.stringify(c.from)) + " → " + (c.to === undefined ? "-" : JSON.stringify(c.to));
 }
 
-/// What the log can honestly be said to support, from its actual content.
+// Reasons the tool fills in itself are not reasons a person gave.
+const PLACEHOLDER = /^(uncommitted working-tree change|baseline: germline init|history since the last recorded commit|\d+ older commit)/;
+
+function hasReason(e) {
+  return Boolean(e.ticket || (e.reason && !PLACEHOLDER.test(e.reason)));
+}
+
+function hasApproval(e) {
+  return Boolean(e.approval && Array.isArray(e.approval.approvedBy) && e.approval.approvedBy.length);
+}
+
+/// What the log shows, per framework, from its actual content. The status is
+/// "Evidence present" only when every change carries what that control asks
+/// for, "Partial" when some do, and "Missing" when none do. It never says
+/// "compliant" or "supported": that is the assessor's call.
 function controls(changes, anchors) {
   const n = changes.length;
-  const withWhy = changes.filter((e) => e.reason || e.ticket).length;
+  const withWhy = changes.filter(hasReason).length;
+  const withApproval = changes.filter(hasApproval).length;
   const withEval = changes.filter((e) => e.eval).length;
   const withCommit = changes.filter((e) => e.commit).length;
   const registry = anchors.some((a) => a.mode === "registry");
   const uploaded = anchors.some((a) => a.storage && a.storage.stored === "0g");
+  const level = (k) => (n === 0 || k === 0 ? "Missing" : k === n ? "Evidence present" : "Partial");
   const rows = [];
   rows.push([
-    "EU AI Act, Art. 12 (record-keeping)",
-    n ? "Supported" : "No changes recorded",
-    n + " change(s), each automatically recorded with time, author and the exact settings that moved.",
-  ]);
-  rows.push([
-    "EU AI Act, Art. 19 (retention of logs)",
-    uploaded ? "Supported" : anchors.length ? "Partly" : "Not yet",
-    uploaded
-      ? "The log is anchored on 0G Chain and a copy is held in 0G Storage, so retention does not depend on one copy."
-      : anchors.length
-        ? "Anchored on 0G Chain, so a rewrite is detectable; the log itself is held only where it is kept (e.g. git). Anchor with --upload to keep a copy in 0G Storage."
-        : "The log is held only where it is kept (e.g. git). Nothing proves it has not been rewritten. Set GERMLINE_ANCHOR_KEY to anchor it.",
-  ]);
-  rows.push([
     "SOC 2 CC8.1 (change management)",
-    n && withWhy === n ? "Supported" : n ? "Partly" : "No changes recorded",
-    withWhy + " of " + n + " change(s) carry a reason or ticket; " + withCommit + " link to a commit; " + withEval + " carry test evidence." +
-      (registry ? " Anchored in an append-only registry." : ""),
+    n === 0 ? "Missing" : withWhy === n && withApproval === n && withEval === n ? "Evidence present" : withWhy + withApproval + withEval ? "Partial" : "Missing",
+    "Of " + n + " change(s): " + withWhy + " give a reason or ticket, " + withApproval + " record an approval, " + withEval + " carry test evidence, " +
+      withCommit + " link to a commit." + (registry ? " Anchored in an append-only registry." : ""),
   ]);
   rows.push([
     "ISO/IEC 42001 (AI management system)",
-    withEval ? "Partly" : "Not yet",
-    withEval
-      ? withEval + " of " + n + " change(s) record the evaluation behind them."
-      : "No change records an evaluation. Pass --score/--baseline/--suite or --eval-file to track to attach test evidence.",
+    level(withEval),
+    withEval + " of " + n + " change(s) record the evaluation behind them." +
+      (withEval < n ? " Pass --score/--baseline/--suite or --eval-file to track to attach test evidence." : ""),
+  ]);
+  rows.push([
+    "EU AI Act, Art. 12 and 19 (record-keeping, retention)",
+    n ? "Partial" : "Missing",
+    "Relevant only to high-risk systems, and these articles cover operational logging, not only configuration. This log covers configuration changes: " +
+      (uploaded
+        ? "anchored on 0G Chain with a copy in 0G Storage."
+        : anchors.length
+          ? "anchored on 0G Chain; the log itself is held only where it is kept."
+          : "not yet anchored, so nothing proves it has not been rewritten."),
   ]);
   return rows;
 }
@@ -204,14 +220,15 @@ function renderMarkdown(entries, options = {}) {
   lines.push("| Systems | " + cell(systems.join(", ")) + " |");
   lines.push("| Changes recorded | " + changes.length + " |");
   lines.push("| Distinct authors | " + new Set(changes.map((e) => e.actor)).size + " |");
-  lines.push("| With a reason or ticket | " + changes.filter((e) => e.reason || e.ticket).length + " |");
+  lines.push("| With a reason or ticket | " + changes.filter(hasReason).length + " |");
+  lines.push("| With a recorded approval | " + changes.filter(hasApproval).length + " |");
   lines.push("| With test evidence | " + changes.filter((e) => e.eval).length + " |");
   lines.push("| First change | " + cell(changes[0] && changes[0].ts) + " |");
   lines.push("| Latest change | " + cell(changes.length ? changes[changes.length - 1].ts : null) + " |");
   lines.push("");
 
   lines.push("## Changes", "");
-  lines.push("| # | When | System | Who | What changed | Why | Commit | Evidence | Config root |");
+  lines.push("| # | When | System | Author | What changed | Why, approval | Commit | Evidence | Config root |");
   lines.push("|---|---|---|---|---|---|---|---|---|");
   const details = [];
   for (const e of changes) {
@@ -227,7 +244,7 @@ function renderMarkdown(entries, options = {}) {
           cell(e.system),
           cell(e.actor) + (e.recordedBy && e.recordedBy !== e.actor ? " (recorded by " + cell(e.recordedBy) + ")" : ""),
           cell(what || "(no field changed)"),
-          cell(why),
+          cell(why) + (hasApproval(e) ? " · approved by " + cell(e.approval.approvedBy.join(", ")) + (e.approval.pr ? " in PR " + cell("#" + e.approval.pr) : "") : ""),
           commit === "-" ? "-" : code(commit),
           cell(evalSummary(e.eval)),
           hex(e.configRoot, HASH) ? code(short(e.configRoot)) : "(invalid)",
@@ -281,12 +298,14 @@ function renderMarkdown(entries, options = {}) {
   );
   lines.push(
     "```bash",
-    "npx germline verify --log audit.jsonl --log-id <log ID from your records> --chain --anchorer <address from your records> --strict",
+    "npx germline verify --log " + shellPath(options.source || ".germline/audit.jsonl") + " --log-id <log ID from your records> --chain --anchorer <address from your records> --strict",
     "```",
     ""
   );
   lines.push(
-    "Verification recomputes every hash locally and reads each anchor from 0G Chain. It needs no account and no trust in whoever produced this file.",
+    "Verification recomputes every hash locally" +
+      (anchors.length ? " and reads each anchor from 0G Chain" : "; with no anchors yet, it cannot rule out a consistent rewrite of the whole file") +
+      ". It needs no account and no trust in whoever produced this file. The browser verifier (web/verify.html) runs the same checks.",
     ""
   );
 
@@ -306,6 +325,8 @@ function changeRows(entries) {
       reason: e.reason || null,
       ticket: e.ticket || null,
       commit: e.commit || null,
+      approvedBy: hasApproval(e) ? e.approval.approvedBy : null,
+      pullRequest: e.approval && e.approval.pr ? e.approval.pr : null,
       redacted: e.redacted === true,
       evalScore: e.eval && e.eval.score !== undefined ? e.eval.score : null,
       evalBaseline: e.eval && e.eval.baseline !== undefined ? e.eval.baseline : null,
@@ -359,16 +380,18 @@ function renderJson(entries, options = {}) {
 
 // A cell that starts with = + - @ is a formula to Excel and Sheets. Prefix
 // it so a commit message cannot run anything in the auditor's spreadsheet.
+// Every cell is quoted, so a locale that splits on ";" cannot open a new
+// cell mid-value either.
 function csvCell(value) {
-  if (value === null || value === undefined) return "";
-  let text = Array.isArray(value) ? value.join("; ") : String(value);
+  if (value === null || value === undefined) return '""';
+  let text = Array.isArray(value) ? value.join(" | ") : String(value);
   if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
-  return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+  return '"' + text.replace(/"/g, '""') + '"';
 }
 
 function renderCsv(entries) {
   const rows = changeRows(entries);
-  const header = ["seq", "ts", "system", "actor", "recordedBy", "changed", "reason", "ticket", "commit", "redacted", "evalScore", "evalBaseline", "evalSuite", "configRoot", "hash"];
+  const header = ["seq", "ts", "system", "actor", "recordedBy", "changed", "reason", "ticket", "commit", "approvedBy", "pullRequest", "redacted", "evalScore", "evalBaseline", "evalSuite", "configRoot", "hash"];
   return [header.join(",")].concat(rows.map((r) => header.map((h) => csvCell(r[h])).join(","))).join("\n") + "\n";
 }
 

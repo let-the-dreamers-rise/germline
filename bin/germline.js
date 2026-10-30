@@ -77,7 +77,7 @@ const SPEC = {
   record: { ...COMMON, ...EVAL, system: VALUE, actor: VALUE, before: VALUE, after: VALUE, reason: VALUE, ticket: VALUE, redact: BOOL },
   track: { ...COMMON, ...EVAL, actor: VALUE, reason: VALUE, ticket: VALUE },
   verify: { ...COMMON, ...PINS, chain: BOOL, strict: BOOL },
-  anchor: { ...COMMON, registry: VALUE, upload: BOOL, "if-key": BOOL },
+  anchor: { ...COMMON, registry: VALUE, upload: BOOL, "if-key": BOOL, "allow-public": BOOL },
   report: { ...COMMON, ...PINS, out: VALUE, title: VALUE, chain: BOOL, format: VALUE },
   init: { files: VALUE, system: VALUE, redact: BOOL, "no-workflow": BOOL },
   demo: { fast: BOOL },
@@ -115,9 +115,18 @@ function parse(argv) {
       if (i + 1 >= rest.length) throw new Error("--" + key + " needs a value");
       value = rest[++i];
     }
+    // An empty value is usually an unset variable ($ANCHORER). Treating it
+    // as "not given" would silently drop a pin.
+    if (value === "") throw new Error("--" + key + " is empty");
     flags[key] = value;
   }
   return { command, flags };
+}
+
+// Log values printed to a terminal or CI log: no control characters, so a
+// key or actor cannot inject ANSI codes or GitHub "::" workflow commands.
+function plain(text) {
+  return String(text).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/^::/, ": :");
 }
 
 function evaluationFrom(flags) {
@@ -173,7 +182,7 @@ const HELP = `germline -- a tamper-evident audit trail for AI configuration chan
                   [--score <n>] [--baseline <n>] [--suite <name>] [--eval-file <f>] [--redact]
   germline verify [--log-id <id>] [--chain [--anchorer <0x..>] [--registry <0x..>]] [--strict]
                   --strict fails on any warning, including "never anchored"
-  germline anchor [--upload] [--registry <0x..>] [--if-key]
+  germline anchor [--upload [--allow-public]] [--registry <0x..>] [--if-key]
   germline id     the log id to keep somewhere other than the log
   germline report [--format md|json|csv] [--out <file>] [--title <text>] [--chain [pins]]
   germline log
@@ -209,7 +218,7 @@ async function main() {
         redact: flags.redact === true,
       });
       const what = entry.changes.map((c) => c.key).join(", ") || "no field changed";
-      console.log("recorded #" + entry.seq + "  " + entry.system + "  " + what + "  " + entry.hash);
+      console.log(plain("recorded #" + entry.seq + "  " + entry.system + "  " + what + "  " + entry.hash));
       return;
     }
 
@@ -272,16 +281,32 @@ async function main() {
       console.log("  config:    .germline/config.json (" + report.config + ")");
       if (report.workflow) console.log("  workflow:  .github/workflows/germline.yml (" + report.workflow + ")");
       else if (!report.git) console.log("  workflow:  skipped (not a git repository; run init again after git init)");
-      console.log("  baseline:  " + (report.baseline.length ? report.baseline.length + " system(s) recorded" : "already recorded"));
+      if (report.deferred) {
+        console.log("  history:   the first CI run records one entry per past commit, on the germline-audit branch");
+      } else {
+        console.log("  baseline:  " + (report.baseline.length ? report.baseline.length + " entr" + (report.baseline.length === 1 ? "y" : "ies") + " recorded" : "already recorded"));
+      }
       console.log("\nNext:");
-      console.log("  1. Check the file list in .germline/config.json");
+      console.log("  1. Check the file list in .germline/config.json (npx germline track --log /tmp/preview.jsonl previews it)");
       console.log("  2. git add .germline .github && git commit -m \"Track AI config with germline\" && git push");
       console.log("  3. Optional: add a funded 0G key as the repo secret GERMLINE_ANCHOR_KEY to anchor on chain");
+      console.log("  4. After the first run: npx germline id --log <the log>, and give that ID to your auditor out of band");
       return;
     }
 
     case "track": {
+      // In GitHub Actions, look up who approved each new commit's pull
+      // request before recording, so the approval is part of the entry.
+      let approvals;
+      if (process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_TOKEN) {
+        const { approvalsFor } = require("../sdk/github");
+        approvals = await approvalsFor(track.pendingCommits({ log: flags.log }), {
+          onError: (sha, error) => console.log("  note: no approval found for " + sha.slice(0, 10) + ": " + error.message),
+        });
+      }
       const { written } = track.trackAll({
+        log: flags.log,
+        approvals,
         actor: flags.actor,
         reason: flags.reason,
         ticket: flags.ticket,
@@ -289,7 +314,8 @@ async function main() {
       });
       if (!written.length) console.log("no tracked config changed");
       for (const e of written) {
-        console.log("recorded #" + e.seq + "  " + e.system + "  " + (e.changes.map((c) => c.key).join(", ") || "baseline") + "  " + e.actor);
+        const approved = e.approval && e.approval.approvedBy.length ? "  approved by " + e.approval.approvedBy.join(", ") : "";
+        console.log(plain("recorded #" + e.seq + "  " + e.system + "  " + (e.changes.map((c) => c.key).join(", ") || "baseline") + "  " + e.actor + approved));
       }
       return;
     }
@@ -303,6 +329,17 @@ async function main() {
       if (flags["if-key"] && !anchorKey()) {
         console.log("no anchor key set; skipping the on-chain anchor (the log is still recorded and verified)");
         return;
+      }
+      // 0G Storage is public and permanent. Refuse to publish prompts and
+      // settings in the clear unless the caller says that is intended.
+      if (flags.upload && !flags["allow-public"]) {
+        const clear = log.entries().filter((e) => e.kind === "change" && !e.redacted && e.after !== undefined);
+        if (clear.length) {
+          throw new Error(
+            clear.length + " entr" + (clear.length === 1 ? "y holds" : "ies hold") + " unredacted config, and 0G Storage is public. " +
+              'Set "redact": true for the system in .germline/config.json (applies to new entries), or pass --allow-public if publishing it is intended.'
+          );
+        }
       }
       const signer = signerFromEnv();
       if (flags.registry) pins(flags);
@@ -322,6 +359,9 @@ async function main() {
       const format = flags.format || (flags.out && /\.json$/i.test(flags.out) ? "json" : flags.out && /\.csv$/i.test(flags.out) ? "csv" : "md");
       if (!["md", "json", "csv"].includes(format)) throw new Error("--format must be md, json or csv");
       const pinned = pins(flags);
+      if ((flags.anchorer || flags.registry) && !flags.chain) {
+        throw new Error("--anchorer and --registry are checked against the chain: add --chain");
+      }
       let chain;
       if (flags.chain) chain = await chainCheck(log, flags);
       const options = {
@@ -349,7 +389,7 @@ async function main() {
     case "log": {
       for (const e of log.entries()) {
         if (e.kind === "anchor") console.log("#" + e.seq + "  " + e.ts + "  ANCHOR  " + e.anchoredEntries + " entries  " + e.txHash);
-        else console.log("#" + e.seq + "  " + e.ts + "  " + e.system + "  " + e.actor + "  " + (e.changes || []).map((c) => c.key).join(", "));
+        else console.log(plain("#" + e.seq + "  " + e.ts + "  " + e.system + "  " + e.actor + "  " + (e.changes || []).map((c) => c.key).join(", ")));
       }
       return;
     }

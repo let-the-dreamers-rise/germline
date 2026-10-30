@@ -1,6 +1,6 @@
 {
   "name": "germline",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A tamper-evident audit trail for AI configuration changes, anchored on 0G. Record who changed which prompt, model or parameter, why, and the eval that justified it; hand an auditor a record they can verify themselves.",
   "license": "MIT",
   "main": "sdk/index.js",

@@ -17,6 +17,7 @@ const { execFileSync } = require("child_process");
 const { openAuditLog, defaultActor } = require("./audit");
 
 const CONFIG_FILE = path.join(".germline", "config.json");
+const VERSION = require("../package.json").version;
 
 // What a file holding AI behaviour tends to be called. Deliberately loose:
 // init shows what it found and the team edits the list, which is faster than
@@ -26,13 +27,18 @@ const EXT = /\.(json|ya?ml|md|txt|prompt|jinja2?|j2|hbs|mustache|toml)$/i;
 const SKIP_DIR = /(^|\/)(node_modules|\.git|\.germline|dist|build|out|coverage|vendor|\.next|\.venv|venv|__pycache__|artifacts|cache)(\/|$)/;
 const SKIP_FILE = /(^|\/)(package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|tsconfig.*\.json|\.eslintrc.*|CHANGELOG\.md|LICENSE.*|README.*)$/i;
 
-function git(args, cwd) {
+// Output is trimmed unless `raw`: file contents must keep their exact bytes,
+// or a prompt ending in a newline would never match its working-tree copy.
+function git(args, cwd, raw = false) {
   try {
-    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const out = execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 });
+    return raw ? out : out.trim();
   } catch (error) {
     return null;
   }
 }
+
+const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 
 function listFiles(cwd) {
   const tracked = git(["ls-files", "--cached", "--others", "--exclude-standard"], cwd);
@@ -112,19 +118,33 @@ function ticketFrom(message) {
 // Paths come from a config file anyone with commit access can edit, so a
 // tracked path must stay inside the repository: no absolute paths, no `..`.
 function safePath(cwd, file) {
+  if (typeof file !== "string" || !file || file.includes("\0")) throw new Error("tracked path " + JSON.stringify(file) + " is not a file name");
   const root = fs.realpathSync(path.resolve(cwd));
   const full = path.resolve(root, file);
   const inside = (p) => p === root || p.startsWith(root + path.sep);
   if (path.isAbsolute(file) || !inside(full)) {
     throw new Error("tracked path " + JSON.stringify(file) + " is outside the repository");
   }
-  // A symlink inside the repository can still point at a runner secret or
-  // .git/config; follow it and check where it really lands.
-  if (fs.existsSync(full) && !inside(fs.realpathSync(full))) {
-    throw new Error("tracked path " + JSON.stringify(file) + " is a link to a file outside the repository");
-  }
-  if (/(^|[\\/])\.git([\\/]|$)/.test(path.relative(root, full))) {
+  const parts = path.relative(root, full).split(path.sep);
+  // Case-insensitive: on macOS and Windows runners .GIT is .git.
+  if (parts.some((p) => p.toLowerCase() === ".git")) {
     throw new Error("tracked path " + JSON.stringify(file) + " is inside .git");
+  }
+  // No symlinks anywhere along the path. A link to a parent (foo -> .git) or
+  // to a file outside the repository could otherwise copy the CI token or a
+  // runner secret into a log that is committed and pushed.
+  let at = root;
+  for (const part of parts) {
+    at = path.join(at, part);
+    let stat;
+    try {
+      stat = fs.lstatSync(at);
+    } catch (missing) {
+      break;
+    }
+    if (stat.isSymbolicLink()) {
+      throw new Error("tracked path " + JSON.stringify(file) + " goes through a symbolic link (" + path.relative(root, at) + "); track the real file");
+    }
   }
   return full;
 }
@@ -145,35 +165,39 @@ function snapshotAt(files, sha, cwd) {
   const state = {};
   for (const file of files) {
     safePath(cwd, file);
-    const text = git(["show", sha + ":" + file.split(path.sep).join("/")], cwd);
+    if (!SHA.test(sha)) throw new Error("not a commit hash: " + JSON.stringify(sha));
+    const text = git(["show", sha + ":" + file.split(path.sep).join("/")], cwd, true);
     state[file] = text === null ? null : parseContent(file, text);
   }
   return state;
 }
 
-const FIELD = "\x1f";
-const RECORD = "\x1e";
-
 /// Commits that touched `files`, oldest first, after `since` (exclusive), or
 /// the whole history when `since` is null. Null when git cannot answer, e.g.
-/// `since` is not in a shallow checkout.
+/// `since` was rebased away or is beyond a shallow checkout.
+///
+/// Hashes come from one call and each commit's details from another, split
+/// on NUL, which a commit message cannot contain. Splitting one combined log
+/// on printable separators would let a crafted message invent commits.
 function commitsTouching(files, since, cwd, limit) {
   if (since && git(["merge-base", "--is-ancestor", since, "HEAD"], cwd) === null) return null;
   const range = since ? [since + "..HEAD"] : ["HEAD"];
-  const out = git(
-    ["log", "--reverse", "--format=%H" + FIELD + "%an" + FIELD + "%ae" + FIELD + "%aI" + FIELD + "%B" + RECORD, ...range, "--", ...files],
-    cwd
-  );
+  const out = git(["log", "--reverse", "--format=%H", ...range, "--", ...files], cwd);
   if (out === null) return null;
-  const commits = out
-    .split(RECORD)
-    .map((r) => r.replace(/^\n/, ""))
-    .filter((r) => r.trim())
-    .map((r) => {
-      const [sha, name, email, date, message] = r.split(FIELD);
-      return { sha, name, email, date, message: (message || "").trim() };
-    });
-  return limit && commits.length > limit ? commits.slice(commits.length - limit) : commits;
+  let shas = out.split("\n").filter(Boolean);
+  if (shas.some((sha) => !SHA.test(sha))) return null;
+  let skipped = 0;
+  if (limit && shas.length > limit) {
+    skipped = shas.length - limit;
+    shas = shas.slice(skipped);
+  }
+  const commits = shas.map((sha) => {
+    const raw = git(["show", "-s", "--format=%an%x00%ae%x00%aI%x00%cI%x00%B", sha], cwd, true) || "";
+    const [name, email, authored, committed, ...rest] = raw.split("\0");
+    return { sha, name, email, date: committed || authored, authoredAt: authored, message: rest.join(" ").trim() };
+  });
+  commits.skipped = skipped;
+  return commits;
 }
 
 /// Record every tracked system's changes since the log last saw them.
@@ -189,7 +213,7 @@ function commitsTouching(files, since, cwd, limit) {
 function trackAll(options = {}) {
   const cwd = options.cwd || process.cwd();
   const config = options.config || loadConfig(cwd);
-  const log = openAuditLog(path.join(cwd, config.log || path.join(".germline", "audit.jsonl")));
+  const log = openAuditLog(options.log ? path.resolve(cwd, options.log) : path.join(cwd, config.log || path.join(".germline", "audit.jsonl")));
   const inGit = git(["rev-parse", "HEAD"], cwd) !== null;
   const recordedBy = defaultActor();
   const written = [];
@@ -199,19 +223,30 @@ function trackAll(options = {}) {
     const common = { redact: system.redact === true, eval: options.eval, recordedBy };
     const last = log.lastChange(system.name);
 
+    let gap = null;
     if (inGit && options.history !== false) {
-      const since = last ? last.commit : null;
-      // A log with entries but no recorded commit predates commit tracking,
-      // or was written outside git; walking all history would replay it.
-      const commits = last && !since ? null : commitsTouching(system.files, since, cwd, options.limit || 200);
+      // Walk from the last commit this system recorded. Working-tree entries
+      // carry no commit and do not reset the walk.
+      const history = log.entries().filter((e) => e.kind === "change" && e.system === system.name);
+      const lastCommitted = [...history].reverse().find((e) => typeof e.commit === "string" && SHA.test(e.commit));
+      const since = lastCommitted ? lastCommitted.commit : null;
+      // Entries but none from git: written before commit tracking or outside
+      // git, and walking all history would replay them.
+      const commits = history.length && !since ? null : commitsTouching(system.files, since, cwd, options.limit || 200);
+      if (commits === null && since) gap = "history since the last recorded commit is not available (rebased, force-pushed, or a shallow checkout)";
+      if (commits && commits.skipped) gap = commits.skipped + " older commit(s) not walked (limit " + (options.limit || 200) + ")";
       for (const c of commits || []) {
+        const approval = options.approvals && options.approvals[c.sha];
         const entry = log.track(system.name, snapshotAt(system.files, c.sha, cwd), {
           ...common,
+          // The author git reports. Not authenticated by git itself; an
+          // approval from the GitHub API, when present, is.
           actor: options.actor || c.email || c.name,
           reason: options.reason || c.message.split("\n")[0] || null,
-          ticket: options.ticket || ticketFrom(c.message),
+          ticket: options.ticket || ticketFrom(c.message) || (approval && approval.pr ? "#" + approval.pr : null),
           commit: c.sha,
           committedAt: c.date,
+          approval: approval || undefined,
         });
         if (entry) written.push(entry);
       }
@@ -226,7 +261,7 @@ function trackAll(options = {}) {
         options.reason ||
         (written.some((e) => e.system === system.name) || !options.baselineReason
           ? inGit
-            ? "uncommitted working-tree change"
+            ? gap || "uncommitted working-tree change"
             : context.reason
           : options.baselineReason),
       ticket: options.ticket || (inGit ? null : context.ticket),
@@ -248,7 +283,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write        # push the log to its branch
+  pull-requests: read    # record who approved each change
 
 # One recorder at a time, so two merges cannot fork the log.
 concurrency:
@@ -264,8 +300,13 @@ jobs:
           # Full history, so each commit that touched a tracked file is
           # recorded on its own, credited to its author.
           fetch-depth: 0
-      - uses: let-the-dreamers-rise/germline@main
+      # Pinned to a release. Review the diff before moving it: this step
+      # holds a write token and your anchor key.
+      - uses: let-the-dreamers-rise/germline@v${VERSION}
         with:
+          # The log lives on its own branch, so a protected main needs no
+          # bot bypass. Remove this line to keep it beside your code.
+          log-branch: germline-audit
           # Optional. Without it, changes are still recorded and verified;
           # they are just not anchored on chain until you add a key.
           anchor-key: \${{ secrets.GERMLINE_ANCHOR_KEY }}
@@ -329,10 +370,37 @@ function init(options = {}) {
     }
   }
 
+  // With the workflow in place, CI owns the log: it lives on the
+  // germline-audit branch, and the first run backfills one entry per past
+  // commit. A local copy here would be a second, divergent log on main.
+  if (report.workflow) {
+    report.baseline = [];
+    report.deferred = true;
+    const ignore = path.join(cwd, ".germline", ".gitignore");
+    const lines = fs.existsSync(ignore) ? fs.readFileSync(ignore, "utf8") : "";
+    if (!/^audit\.jsonl$/m.test(lines)) fs.writeFileSync(ignore, lines + "audit.jsonl\n");
+    return report;
+  }
   // Backfilled commits keep their own messages; only a state git cannot
   // attribute (no history, or uncommitted files) is labelled as the baseline.
   report.baseline = trackAll({ cwd, config, baselineReason: "baseline: germline init", ...options.meta }).written;
   return report;
 }
 
-module.exports = { init, trackAll, discover, snapshot, snapshotAt, loadConfig, commitContext, ticketFrom, workflow, CONFIG_FILE };
+/// Commits trackAll would record next, per system, so a caller can look up
+/// their approvals first (that needs the network; trackAll does not).
+function pendingCommits(options = {}) {
+  const cwd = options.cwd || process.cwd();
+  const config = options.config || loadConfig(cwd);
+  const log = openAuditLog(options.log ? path.resolve(cwd, options.log) : path.join(cwd, config.log || path.join(".germline", "audit.jsonl")));
+  const shas = new Set();
+  for (const system of config.systems) {
+    const history = log.entries().filter((e) => e.kind === "change" && e.system === system.name);
+    const last = [...history].reverse().find((e) => typeof e.commit === "string" && SHA.test(e.commit));
+    if (history.length && !last) continue;
+    for (const c of commitsTouching(system.files, last ? last.commit : null, cwd, options.limit || 200) || []) shas.add(c.sha);
+  }
+  return Array.from(shas);
+}
+
+module.exports = { init, trackAll, pendingCommits, discover, snapshot, snapshotAt, loadConfig, commitContext, ticketFrom, workflow, safePath, CONFIG_FILE };

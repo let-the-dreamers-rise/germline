@@ -49,7 +49,8 @@ function demo({ out = console.log, delay = 600 } = {}) {
       process.env.GERMLINE_ACTOR = actor;
       write(file, content);
       for (const e of trackAll({ cwd: dir, reason }).written) {
-        out("  #" + e.seq + "  " + e.actor.padEnd(13) + e.changes.map((c) => c.key).join(", ").padEnd(20) + reason);
+        const what = e.changes.map((c) => c.key.replace(/^.*› /, "")).join(", ");
+        out("  #" + e.seq + "  " + e.actor.padEnd(14) + what.padEnd(20) + "  " + reason);
       }
     }
 

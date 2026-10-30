@@ -65,8 +65,9 @@ describe("init and track", function () {
     const dir = repo(FILES);
     execFileSync("git", ["init", "-q"], { cwd: dir });
     const first = init({ cwd: dir, system: "support" });
-    expect(first).to.include({ config: "written", workflow: "written" });
-    expect(first.baseline).to.have.length(1);
+    expect(first).to.include({ config: "written", workflow: "written", deferred: true });
+    expect(first.baseline).to.have.length(0);
+    expect(fs.readFileSync(path.join(dir, ".germline/.gitignore"), "utf8")).to.include("audit.jsonl");
     expect(fs.readFileSync(path.join(dir, ".github/workflows/germline.yml"), "utf8")).to.include("let-the-dreamers-rise/germline@");
     expect(fs.readFileSync(path.join(dir, ".germline/.gitignore"), "utf8")).to.include("storage/");
 
@@ -104,7 +105,7 @@ describe("init and track", function () {
     g("a@x", "init", "-q");
     g("a@x", "add", ".");
     g("a@x", "commit", "-qm", "Tighten refund prompt");
-    init({ cwd: dir, system: "support" });
+    init({ cwd: dir, system: "support", workflow: false });
     const first = openAuditLog(path.join(dir, ".germline/audit.jsonl")).entries()[0];
     expect(first).to.include({ actor: "a@x", reason: "Tighten refund prompt", recordedBy: "test-actor" });
     expect(first.commit).to.match(/^[0-9a-f]{40}$/);
@@ -123,6 +124,37 @@ describe("init and track", function () {
     expect(log.verify().ok).to.equal(true);
   });
 
+  it("keeps attributing per commit when files end in a newline", function () {
+    const dir = repo({ "prompts/system.md": "v1\n", "config/agent.json": '{"model":"m-1"}\n' });
+    const g = (email, ...args) => execFileSync("git", ["-c", "user.email=" + email, "-c", "user.name=n", ...args], { cwd: dir, stdio: "ignore" });
+    g("a@x", "init", "-q");
+    g("a@x", "add", ".");
+    g("a@x", "commit", "-qm", "first");
+    init({ cwd: dir, system: "s", workflow: false });
+    expect(trackAll({ cwd: dir }).written).to.have.length(0);
+    fs.writeFileSync(path.join(dir, "prompts/system.md"), "v2\n");
+    g("b@x", "commit", "-qam", "Tighten refunds per LEGAL-88");
+    const [entry, ...rest] = trackAll({ cwd: dir }).written;
+    expect(rest).to.have.length(0);
+    expect(entry).to.include({ actor: "b@x", reason: "Tighten refunds per LEGAL-88", ticket: "LEGAL-88" });
+    expect(entry.commit).to.match(/^[0-9a-f]{40}$/);
+  });
+
+  it("a commit message cannot invent commits", function () {
+    const dir = repo({ "prompts/system.md": "v1" });
+    const g = (...args) => execFileSync("git", ["-c", "user.email=dev@x", "-c", "user.name=n", ...args], { cwd: dir, stdio: "ignore" });
+    g("init", "-q");
+    g("add", ".");
+    g("commit", "-qm", "first");
+    const first = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+    init({ cwd: dir, system: "s", files: ["prompts/system.md"], workflow: false });
+    fs.writeFileSync(path.join(dir, "prompts/system.md"), "v2");
+    g("commit", "-qam", "tweak\x1e" + first + "\x1fCEO\x1fceo@corp.com\x1f2020-01-01T00:00:00Z\x1fApproved by board SEC-1");
+    const { written } = trackAll({ cwd: dir });
+    expect(written).to.have.length(1);
+    expect(written[0].actor).to.equal("dev@x");
+  });
+
   it("refuses tracked paths outside the repository, through links, or in .git", function () {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), "germline-out-"));
     fs.writeFileSync(path.join(outside, "secret.env"), "SECRET=1");
@@ -131,8 +163,42 @@ describe("init and track", function () {
     const config = (files) => ({ systems: [{ name: "s", files }] });
     expect(() => trackAll({ cwd: dir, config: config(["../x"]) })).to.throw(/outside the repository/);
     expect(() => trackAll({ cwd: dir, config: config([path.join(outside, "secret.env")]) })).to.throw(/outside/);
-    expect(() => trackAll({ cwd: dir, config: config(["agent.prompt"]) })).to.throw(/link to a file outside/);
+    expect(() => trackAll({ cwd: dir, config: config(["agent.prompt"]) })).to.throw(/symbolic link/);
     expect(() => trackAll({ cwd: dir, config: config([".git/config"]) })).to.throw(/inside .git/);
+    expect(() => trackAll({ cwd: dir, config: config([".GIT/config"]) })).to.throw(/inside .git/);
+    fs.mkdirSync(path.join(dir, ".git"));
+    fs.writeFileSync(path.join(dir, ".git", "config"), "extraheader = AUTHORIZATION: basic c2VjcmV0");
+    fs.symlinkSync(".git", path.join(dir, "foo"));
+    expect(() => trackAll({ cwd: dir, config: config(["foo/config"]) })).to.throw(/symbolic link/);
+  });
+
+  it("records who approved each commit's pull request, from GitHub", async function () {
+    const { approvalsFor } = require("../sdk/github");
+    const sha = "a".repeat(40);
+    const calls = [];
+    const fetch = async (url) => {
+      calls.push(url);
+      const body = url.endsWith("/pulls")
+        ? [{ number: 12, merged_at: "2026-10-01T00:00:00Z", html_url: "https://github.com/o/r/pull/12" }]
+        : url.endsWith("/pulls/12")
+          ? { merged_by: { login: "lead" } }
+          : [
+              { user: { login: "rev1" }, state: "APPROVED", submitted_at: "2026-09-30T10:00:00Z" },
+              { user: { login: "rev2" }, state: "APPROVED", submitted_at: "2026-09-30T11:00:00Z" },
+              { user: { login: "rev2" }, state: "CHANGES_REQUESTED", submitted_at: "2026-09-30T12:00:00Z" },
+              { user: { login: "rev1" }, state: "COMMENTED", submitted_at: "2026-09-30T13:00:00Z" },
+            ];
+      return { ok: true, json: async () => body };
+    };
+    const out = await approvalsFor([sha, "not-a-sha"], { repo: "o/r", token: "t", fetch });
+    expect(out[sha]).to.include({ pr: 12, mergedBy: "lead", approvedAt: "2026-09-30T10:00:00Z" });
+    expect(out[sha].approvedBy).to.deep.equal(["rev1"]);
+    expect(calls.every((u) => u.startsWith("https://api.github.com/repos/o/r/"))).to.equal(true);
+    expect(await approvalsFor([sha], { repo: "o/r", token: undefined, fetch })).to.deep.equal({});
+
+    const log = openAuditLog(path.join(repo({}), "a.jsonl"));
+    log.record({ system: "s", actor: "a", after: { t: 1 }, reason: "x", commit: sha, approval: out[sha] });
+    expect(renderMarkdown(log.entries())).to.include("approved by rev1 in PR \\#12");
   });
 
   it("finds tickets in commit messages", function () {

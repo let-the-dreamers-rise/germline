@@ -295,8 +295,9 @@ describe("audit trail", function () {
 
     it("states what the log does not show instead of overclaiming", function () {
       const md = renderMarkdown(forged().entries());
-      expect(md).to.match(/Art\. 19 \(retention of logs\) \| Not yet/);
-      expect(md).to.match(/ISO\/IEC 42001 \(AI management system\) \| Not yet/);
+      expect(md).to.match(/CC8\.1 \(change management\) \| Partial \| Of 1 change\(s\): 1 give a reason or ticket, 0 record an approval, 0 carry test evidence/);
+      expect(md).to.match(/ISO\/IEC 42001 \(AI management system\) \| Missing/);
+      expect(md).to.not.match(/Supported|compliant\b/);
     });
 
     it("exports JSON and spreadsheet-safe CSV", function () {
@@ -356,6 +357,10 @@ describe("audit trail", function () {
       expect(attempt(dir, "verify", "--log", file, "--anchorer", "0x" + "a".repeat(40)).out).to.include("add --chain");
       expect(attempt(dir, "verify", "--log", file, "--anchorr", "0x1").out).to.include("unknown option --anchorr");
       expect(attempt(dir, "--version").out.trim()).to.equal(require("../package.json").version);
+      expect(attempt(dir, "verify", "--log", file, "--log-id", "").out).to.include("--log-id is empty");
+      const upload = attempt(dir, "anchor", "--log", file, "--upload");
+      expect(upload.code).to.equal(1);
+      expect(upload.out).to.include("0G Storage is public");
     });
 
     it("writes json and csv reports", function () {

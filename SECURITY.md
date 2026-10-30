@@ -36,12 +36,19 @@ first.
 - **Truth is not checked, only permanence.** A false reason or an invented
   eval score is recorded faithfully. Germline proves what was claimed and
   when, not that it was correct. Attach evidence an auditor can re-run.
-- **The actor field is not authenticated.** `--actor` is whatever the writer
-  says. In CI it is the CI system's identity (`github.actor`), which is as
-  good as your branch protection. Signed entries are on the roadmap.
-- **Pins must come from outside the file.** Without the log id, anchorer and
-  registry address from an independent source, a forger who controls
-  everything can start over. `verify` warns whenever a pin is missing, and
+- **The author is git's claim; the approval is GitHub's.** Each entry's
+  `actor` is the commit author, which anyone can set with `git commit
+  --author`. `recordedBy` is the CI identity that ran the recording. When the
+  action runs with `pull-requests: read`, `approval` holds the pull request,
+  its approvers and the merger as GitHub's API reports them, and those are
+  authenticated accounts. `committedAt` is the committer date, which is also
+  settable. Signed entries (OIDC, Sigstore) are on the roadmap.
+- **Pins must come from outside the file, and early.** Without the log id,
+  anchorer and registry address from an independent source, a forger who
+  controls everything can start over. In practice the auditee hands these to
+  the auditor, so hand them over at the *start* of the audit period, not the
+  end: a log built the week before the audit under a new key is caught only
+  if the pins predate it. `verify` warns whenever a pin is missing, and
   `--strict` turns warnings into failure.
 - **Backdating before the first anchor is undetectable.** Timestamps are the
   writer's clock until a block fixes an upper bound on them.
@@ -66,9 +73,15 @@ first.
 - **Raw bytes are pinned.** Each line must be the canonical serialisation of
   its value (`JSON.stringify` of the parsed line), so duplicate keys, padded
   numbers and alternative escapes are rejected rather than parsed two ways.
-- **Tracked paths stay inside the repository.** Absolute paths, `..`,
-  symlinks that resolve outside the repository and anything under `.git` are
-  refused, so a merged config change cannot copy runner secrets into the log.
+- **Tracked paths stay inside the repository.** Absolute paths, `..`, any
+  path that goes through a symbolic link, and anything under `.git` (in any
+  letter case) are refused, so a merged config change cannot copy the CI
+  token or runner secrets into the log.
+- **Commit messages are data.** Commit hashes and details are read with
+  separate git calls split on NUL, so a crafted message cannot invent
+  commits, authors or dates.
+- **0G Storage is public.** `anchor --upload` refuses a log that holds
+  unredacted config unless `--allow-public` is passed.
 - **The evidence pack is hostile input.** Every value from the log is escaped,
   hashes and addresses are shape-checked, and the pack's verification command
   never fills in pins from the file it describes.

@@ -456,6 +456,8 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
       commit: commit || null,
       committedAt: input.committedAt || null,
       recordedBy: input.recordedBy || null,
+      // Who approved the change, from the code host's API (see sdk/github.js).
+      approval: input.approval || undefined,
       beforeRoot: before !== undefined ? configRootOf(before) : input.beforeRoot || null,
       configRoot: configRootOf(after),
       changes,
@@ -718,6 +720,13 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
       warnings.push("some anchors are plain transactions: removing their records from the log would not be detected; use a registry");
     }
     if (results.length === 0) warnings.push("nothing was anchored: until it is, the whole log can be rewritten undetectably");
+    // A pinned anchorer that no checked anchor came from is a failure, with
+    // or without a registry: the verifier expected that key to vouch for it.
+    for (const who of pinnedAnchorers || []) {
+      const vouched = results.some((r) => r.ok && r.source !== "pin" && (r.anchorer ? String(r.anchorer).toLowerCase() === who : true));
+      const reported = results.some((r) => r.source === "pin" && String(r.reason || "").toLowerCase().includes(who));
+      if (!vouched && !reported) results.push({ seq: null, source: "pin", ok: false, reason: "no valid anchor from the pinned anchorer " + who });
+    }
 
     return { ok: local.ok && results.every((r) => r.ok), results, warnings, logId, anchorers };
   }

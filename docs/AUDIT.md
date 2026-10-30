@@ -45,7 +45,8 @@ every push it:
 2. records one entry per commit that touched a tracked file, credited to the
    commit's author, with the commit's message as the reason and any ticket
    (`ABC-123` or `#45`) it mentions; the CI identity is kept as `recordedBy`;
-3. commits the log back with `[skip ci]` and pushes it, rebuilding and
+3. commits the log with `[skip ci]` to the `germline-audit` branch (or the
+   same branch, if `log-branch` is empty) and pushes it, rebuilding and
    retrying if someone pushed in between;
 4. only then, if `GERMLINE_ANCHOR_KEY` is set, anchors the pushed head on 0G
    and pushes the anchor receipt.
@@ -57,14 +58,20 @@ branch would make verification fail for an honest log forever. The workflow
 
 ### Branch protection
 
-If the default branch rejects pushes from the workflow, the log cannot be
-committed and the run fails with a pointer here. Two options:
+The workflow `init` writes sets `log-branch: germline-audit`, so the log is
+committed to its own branch and `main` stays protected without a bot bypass.
+Protect `germline-audit` against force-pushes and deletion, but allow the
+workflow to push to it. Remove `log-branch` to keep the log beside the code
+instead; then the default branch must accept the workflow's pushes.
 
-- allow the `github-actions[bot]` (or the token you give the action) to
-  bypass the rule for this workflow; or
-- set `"log"` in `.germline/config.json` to a path you push to a separate,
-  unprotected branch (e.g. with a second checkout), and pin that branch in
-  your verify job.
+### Approvals
+
+With `pull-requests: read` in the workflow's permissions (which `init`
+writes), each entry for a commit merged through a pull request records the
+PR number, who approved it (each reviewer's latest review), and who merged
+it, from the GitHub API. Those are authenticated GitHub accounts, unlike a
+commit's author line. A commit pushed straight to the branch has no
+approval, and the evidence pack says so.
 
 ### Attaching test evidence
 
@@ -76,7 +83,9 @@ the change to every entry it writes. Run it in the job that runs your evals.
 |---|---|---|
 | `anchor-key` | empty | funded 0G key; empty means record and verify only |
 | `registry` | shipped deployment | GermlineAnchor address |
-| `upload` | `false` | also publish the log to 0G Storage |
+| `upload` | `false` | also publish the log to 0G Storage; refuses unredacted config |
+| `allow-public-upload` | `false` | allow uploading unredacted config (0G Storage is public) |
+| `log-branch` | empty | branch that holds the log; `init` writes `germline-audit` |
 | `commit` | `true` | commit the updated log back to the branch |
 | `rpc` | `https://evmrpc.0g.ai` | 0G Chain RPC |
 
