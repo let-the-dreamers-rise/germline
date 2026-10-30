@@ -81,18 +81,31 @@ jobs:
 Commit the log to the repository it describes. Git history then becomes a
 second, independent copy, and the anchor makes both checkable.
 
+## Anchoring, and what to pin
+
+`germline anchor` writes into the GermlineAnchor registry when one is known
+for the chain (`--registry`, `GERMLINE_REGISTRY`, or `deployments/*-anchor.json`),
+and falls back to a plain self-transaction otherwise. Use the registry: it
+keeps every anchor on chain, so deleting anchor records from the file does
+not hide them.
+
+Give your auditor three things, through a channel other than the log:
+
+```bash
+germline id          # the log id
+# the anchorer address printed by `germline anchor`
+# the registry address, from deployments/zerog-anchor.json
+```
+
+They verify with all three pinned:
+
+```bash
+germline verify --chain --strict --log-id 0x… --anchorer 0x… --registry 0x…
+```
+
+Missing pins are warnings; `--strict` fails on any warning.
+
 ## Threat model
 
-| attack | caught by |
-|---|---|
-| edit an entry's fields | hash mismatch, `verify` |
-| delete or reorder entries | broken `prev` link or sequence, `verify` |
-| swap a stored config for another | `configRoot` mismatch, `verify` |
-| rewrite the whole log consistently, after an anchor | anchored head no longer at that position, `verify --chain` |
-| rewrite the whole log before the first anchor | **not caught.** Anchor early and often |
-| record a false reason or a made-up eval score | **not caught.** Germline fixes what was claimed in place; it does not check it is true. Attach evidence an auditor can re-run |
-| lose the only copy | 0G Storage copy from `anchor --upload`, plus git |
-
-The anchoring key is an ordinary 0G account. Anyone can see which address
-anchored, and `verify --chain` checks the transaction came from the address
-the log says it did.
+See [SECURITY.md](../SECURITY.md) for the full table of attacks, which tests
+cover each one, and what the audit trail does not protect against.

@@ -23,6 +23,7 @@ npx germline record --system support-agent --actor ash@acme.com \
 
 npx germline verify            # exit 1 if anyone edited the log
 npx germline anchor --upload   # pin the head on 0G Chain, log to 0G Storage
+npx germline verify --chain --log-id 0x… --anchorer 0x…   # what an auditor runs
 npx germline report --out evidence.md
 ```
 
@@ -58,9 +59,11 @@ compliant on its own, and the evidence pack says so.
 
 - **Hash chain.** Every entry carries the hash of the one before it. Edit,
   delete or reorder one and `germline verify` fails, offline, for anyone.
-- **Anchor on 0G Chain.** The head hash goes into a 0G transaction, so even
-  whoever holds the file cannot rewrite history consistently after that
-  point. No contract, nothing upgradeable, about the cost of a transfer.
+- **Anchor on 0G Chain.** The head hash goes into `GermlineAnchor`, an
+  append-only registry with no owner and no upgrade path. Every anchor ever
+  made stays readable, so even whoever holds the file cannot rewrite history
+  after that point, or hide that they tried. On a chain with no registry it
+  falls back to a plain transaction.
 - **Copy on 0G Storage.** `anchor --upload` publishes the log through the
   official `@0gfoundation/0g-storage-ts-sdk`, so an auditor can fetch it
   without asking you for a copy.
@@ -70,8 +73,9 @@ compliant on its own, and the evidence pack says so.
 
 A vendor's own dashboard is the vendor asserting something about itself.
 This is a record the vendor cannot quietly change, which is what an auditor
-is actually asking for. See [docs/AUDIT.md](docs/AUDIT.md) for the format,
-the CI setup and the threat model.
+is actually asking for. See [docs/AUDIT.md](docs/AUDIT.md) for the format
+and the CI setup, and [SECURITY.md](SECURITY.md) for every attack it catches,
+the test for each, and the ones it does not.
 
 ## Also in the box: config search with an honest control
 
@@ -366,8 +370,9 @@ Or work on it directly:
 
 ```bash
 npm install
-npm test                  # 45 contract and engine tests
+npm test                  # all 76 tests: contracts, engine, audit trail, attacks
 npm run test:sdk          # audit trail, CLI and storage, no chain needed
+                          # (npm test also runs test/anchor.test.js: every attack against a real EVM)
 npm run bench             # the search against its random control
 npm run example:rag       # tune a RAG agent, no chain needed
 npm run example:pricing   # tune pricing rules, no model needed
@@ -440,6 +445,7 @@ Stated plainly, because the edges matter more than the pitch.
 
 ```
 bin/germline.js            the CLI: record, verify, anchor, report, log
+contracts/GermlineAnchor.sol  append-only registry of audit-log anchors
 contracts/Germline.sol     the registry: lineage, seeds, fitness, selection
 sdk/audit.js, report.js    the audit trail and the evidence pack
 sdk/                       defineTrial and optimise -- the search API
@@ -448,5 +454,5 @@ examples/                  a RAG agent and a pricing ladder
 scripts/                   preflight, deploy, found, breed, verify, status
 lib/                       chain access, genome cache, storage publication
 web/index.html             lineage viewer, single file, no build step
-test/                      45 tests
+test/                      76 tests
 ```

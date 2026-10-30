@@ -62,7 +62,13 @@ function renderMarkdown(entries, options = {}) {
   const check = verifyEntries(entries);
   const changes = entries.filter((e) => e.kind === "change");
   const anchors = entries.filter((e) => e.kind === "anchor");
-  const checks = new Map((options.anchorChecks || []).map((r) => [r.seq, r]));
+  // One verdict per anchor entry; a failure from any check wins over a pass.
+  const checks = new Map();
+  for (const r of options.anchorChecks || []) {
+    if (r.seq === null) continue;
+    const seen = checks.get(r.seq);
+    if (!seen || (seen.ok && !r.ok)) checks.set(r.seq, r);
+  }
   const systems = Array.from(new Set(changes.map((e) => e.system))).sort();
   const title = options.title || "AI configuration change record";
   const generated = options.now || new Date().toISOString();
@@ -78,7 +84,17 @@ function renderMarkdown(entries, options = {}) {
     lines.push("**Hash chain does NOT verify.** " + check.problems.length + " problem(s):", "");
     for (const p of check.problems) lines.push("- entry " + p.seq + ": " + p.reason);
   }
+  for (const w of check.warnings || []) lines.push("- warning, entry " + w.seq + ": " + w.reason);
   lines.push("", "Head: `" + check.head + "`", "");
+  if (check.logId) {
+    const anchorers = Array.from(new Set(anchors.map((a) => a.anchorer)));
+    lines.push(
+      "Log ID: `" + check.logId + "`" + (anchorers.length ? " · anchored by `" + anchorers.join("`, `") + "`" : ""),
+      "",
+      "Keep the log ID and anchorer address somewhere other than this file. A verifier who pins both catches even a complete rewrite of the log.",
+      ""
+    );
+  }
 
   if (anchors.length === 0) {
     lines.push("Not yet anchored on chain. Until it is, whoever holds this file could rewrite all of it consistently.");
@@ -87,12 +103,24 @@ function renderMarkdown(entries, options = {}) {
     const covered = last.anchoredEntries;
     const chains = Array.from(new Set(anchors.map((a) => a.chainId)));
     const where = chains.every((id) => EXPLORERS[id]) ? "0G Chain" : "chain " + chains.join(", ");
+    const registry = anchors.some((a) => a.mode === "registry");
     lines.push(
-      "Anchored " + anchors.length + " time(s) on " + where + ". The latest anchor covers the first " +
-        covered + " of " + check.entries + " entries."
+      "Anchored " + anchors.length + " time(s) on " + where + (registry ? " in the GermlineAnchor registry" : " as plain transactions") +
+        ". The latest anchor covers the first " + covered + " of " + check.entries + " entries."
     );
   }
   lines.push("");
+  if (options.chainWarnings && options.chainWarnings.length) {
+    lines.push("Chain check warnings:", "");
+    for (const w of options.chainWarnings) lines.push("- " + w);
+    lines.push("");
+  }
+  const unlisted = (options.anchorChecks || []).filter((r) => r.seq === null);
+  if (unlisted.length) {
+    lines.push("Anchors held on chain that this file does not list:", "");
+    for (const r of unlisted) lines.push("- registry #" + r.index + " (" + r.entries + " entries): " + (r.ok ? "consistent with this log" : "FAILED: " + r.reason));
+    lines.push("");
+  }
 
   lines.push("## Summary", "");
   lines.push("| | |", "|---|---|");
@@ -125,7 +153,8 @@ function renderMarkdown(entries, options = {}) {
     lines.push("|---|---|---|---|---|---|---|");
     for (const a of anchors) {
       const base = EXPLORERS[a.chainId];
-      const tx = base ? "[" + short(a.txHash) + "](" + base + a.txHash + ")" : "`" + short(a.txHash) + "`";
+      const link = base ? "[" + short(a.txHash) + "](" + base + a.txHash + ")" : "`" + short(a.txHash) + "`";
+      const tx = a.mode === "registry" ? link + " (registry #" + a.index + ")" : link;
       const checked = checks.has(a.seq) ? (checks.get(a.seq).ok ? "yes" : "FAILED: " + checks.get(a.seq).reason) : "not checked";
       const stored = a.storage ? (a.storage.stored === "0g" ? a.storage.storageRoot || a.storage.uri : "local only") : "-";
       lines.push("| " + [a.seq, a.ts, "entries 0–" + (a.anchoredEntries - 1), a.chainId, tx, checked, stored].map((v, i) => (i === 4 ? v : cell(v))).join(" | ") + " |");
@@ -143,7 +172,9 @@ function renderMarkdown(entries, options = {}) {
   );
 
   lines.push("## How to verify this yourself", "");
-  lines.push("```bash", "npx germline verify --log " + (options.source || ".germline/audit.jsonl") + " --chain", "```", "");
+  lines.push("```bash", "npx germline verify --log " + (options.source || ".germline/audit.jsonl") + " --chain" +
+    (check.logId ? " --log-id " + check.logId : "") +
+    (anchors.length ? " --anchorer " + Array.from(new Set(anchors.map((a) => a.anchorer))).join(",") : ""), "```", "");
   lines.push("Verification recomputes every hash locally and reads each anchor transaction from 0G Chain. It needs no account and no trust in whoever produced this file.", "");
 
   return lines.join("\n");

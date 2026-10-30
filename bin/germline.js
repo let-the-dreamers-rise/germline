@@ -6,8 +6,11 @@
 //   germline record --system support-agent --actor ash --after config.json \
 //                   [--before old.json] [--reason "..."] [--ticket JIRA-12] \
 //                   [--score 0.91] [--baseline 0.84] [--suite refunds-v4] [--redact]
-//   germline verify [--chain]          exit 1 if the log has been tampered with
-//   germline anchor [--upload]         pin the head on 0G Chain (needs DEPLOYER_KEY)
+//   germline verify [--chain] [--log-id 0x..] [--anchorer 0x..] [--registry 0x..]
+//                                      exit 1 if the log has been tampered with
+//   germline anchor [--upload] [--registry 0x..]
+//                                      pin the head on 0G Chain (needs DEPLOYER_KEY)
+//   germline id                        the log id to give auditors
 //   germline report [--out file.md]    the evidence pack, as Markdown
 //   germline log                       one line per entry
 //
@@ -19,7 +22,41 @@ const fs = require("fs");
 const { openAuditLog } = require("../sdk/audit");
 const { renderMarkdown } = require("../sdk/report");
 
+const path = require("path");
+
 const DEFAULT_RPC = process.env.ZEROG_RPC || "https://evmrpc.0g.ai";
+
+// The registry to anchor into: --registry, then GERMLINE_REGISTRY, then the
+// address recorded in deployments/ for the chain the RPC reports. Null means
+// plain-transaction anchors, which work everywhere but are weaker.
+async function registryFor(flags, provider) {
+  if (flags.registry && flags.registry !== true) return flags.registry;
+  if (process.env.GERMLINE_REGISTRY) return process.env.GERMLINE_REGISTRY;
+  const { chainId } = await provider.getNetwork();
+  const dir = path.join(__dirname, "..", "deployments");
+  try {
+    for (const name of fs.readdirSync(dir)) {
+      if (!name.endsWith("-anchor.json")) continue;
+      const record = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8"));
+      if (Number(record.chainId) === Number(chainId) && record.address) return record.address;
+    }
+  } catch (ignored) {}
+  return null;
+}
+
+function pins(flags) {
+  return {
+    logId: flags["log-id"] && flags["log-id"] !== true ? flags["log-id"] : undefined,
+    anchorer: flags.anchorer && flags.anchorer !== true ? flags.anchorer.split(",") : undefined,
+  };
+}
+
+async function chainCheck(log, flags) {
+  const { JsonRpcProvider } = require("ethers");
+  const provider = new JsonRpcProvider(DEFAULT_RPC);
+  const registry = await registryFor(flags, provider);
+  return log.verifyChain(provider, { ...pins(flags), registry: registry || undefined });
+}
 
 function parse(argv) {
   const [command, ...rest] = argv;
@@ -66,15 +103,16 @@ const HELP = `germline -- a tamper-evident audit trail for AI configuration chan
   germline record --system <name> --actor <who> --after <config.json>
                   [--before <old.json>] [--reason <text>] [--ticket <id>]
                   [--score <n>] [--baseline <n>] [--suite <name>] [--redact]
-  germline verify [--chain]
-  germline anchor [--upload]
+  germline verify [--chain] [--strict] [--log-id <id>] [--anchorer <0x..>]
+  germline anchor [--upload] [--registry <0x..>]
+  germline id
   germline report [--out <file.md>] [--title <text>] [--chain]
   germline log
 
   --log <file>   audit log to use (default .germline/audit.jsonl)
 
 Environment: DEPLOYER_KEY (anchor), ZEROG_RPC (default https://evmrpc.0g.ai),
-GERMLINE_ACTOR (default --actor). anchor --upload also publishes the log to
+GERMLINE_ACTOR (default --actor), GERMLINE_REGISTRY (anchor registry). anchor --upload also publishes the log to
 0G Storage; install @0gfoundation/0g-storage-ts-sdk for that.`;
 
 async function main() {
@@ -113,21 +151,27 @@ async function main() {
         for (const p of result.problems) console.error("  entry " + p.seq + ": " + p.reason);
         process.exitCode = 1;
       }
+      for (const w of result.warnings) console.log("  warning: entry " + w.seq + ": " + w.reason);
       if (flags.chain) {
-        const { JsonRpcProvider } = require("ethers");
-        const anchors = await log.verifyAnchors(new JsonRpcProvider(DEFAULT_RPC));
-        if (!anchors.length) console.log("no anchors to check");
-        for (const a of anchors) {
-          console.log((a.ok ? "  anchor ok     " : "  anchor FAILED ") + "#" + a.seq + "  " + a.txHash + (a.reason ? "  " + a.reason : ""));
-          if (!a.ok) process.exitCode = 1;
+        const chain = await chainCheck(log, flags);
+        console.log("log id: " + chain.logId);
+        for (const r of chain.results) {
+          const label = r.source === "registry" ? "registry anchor #" + r.index : r.source === "tx" ? "tx anchor " + r.txHash : "pin";
+          console.log((r.ok ? "  ok      " : "  FAILED  ") + label + (r.entries ? " (" + r.entries + " entries)" : "") + (r.reason ? "  " + r.reason : ""));
+          if (!r.ok) process.exitCode = 1;
         }
-      }
-      return;
+        for (const w of chain.warnings) console.log("  warning: " + w);
+        if (flags.strict && chain.warnings.length) process.exitCode = 1;
+      }      return;
     }
 
     case "anchor": {
-      const entry = await log.anchor({ signer: signerFromEnv(), upload: flags.upload === true });
+      const signer = signerFromEnv();
+      const registry = await registryFor(flags, signer.provider);
+      const entry = await log.anchor({ signer, upload: flags.upload === true, registry: registry || undefined });
       console.log("anchored " + entry.anchoredEntries + " entries, head " + entry.anchoredHead);
+      console.log("  mode:    " + (entry.mode === "registry" ? "registry " + entry.registry + " #" + entry.index : "plain transaction (no registry on this chain; weaker, see docs/AUDIT.md)"));
+      console.log("  log id:  " + entry.logId + "  anchorer " + entry.anchorer);
       console.log("  tx:      " + entry.txHash + "  (chain " + entry.chainId + ", block " + entry.block + ")");
       if (entry.storage) {
         console.log("  storage: " + entry.storage.stored + "  " + (entry.storage.storageRoot || entry.storage.uri));
@@ -136,20 +180,25 @@ async function main() {
     }
 
     case "report": {
-      let anchorChecks;
-      if (flags.chain) {
-        const { JsonRpcProvider } = require("ethers");
-        anchorChecks = await log.verifyAnchors(new JsonRpcProvider(DEFAULT_RPC));
-      }
+      let chain;
+      if (flags.chain) chain = await chainCheck(log, flags);
       const markdown = renderMarkdown(log.entries(), {
         source: file,
         title: flags.title === true ? undefined : flags.title,
-        anchorChecks,
+        anchorChecks: chain ? chain.results : undefined,
+        chainWarnings: chain ? chain.warnings : undefined,
       });
       if (flags.out && flags.out !== true) {
         fs.writeFileSync(flags.out, markdown, "utf8");
         console.log("wrote " + flags.out);
       } else process.stdout.write(markdown);
+      return;
+    }
+
+    case "id": {
+      const result = log.verify();
+      if (!result.logId) throw new Error("the log is empty, so it has no id yet");
+      console.log(result.logId);
       return;
     }
 

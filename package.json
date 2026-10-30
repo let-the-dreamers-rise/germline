@@ -28,7 +28,8 @@
     "contracts/",
     "README.md",
     "LICENSE",
-    "docs/"
+    "docs/",
+    "SECURITY.md"
   ],
   "scripts": {
     "build": "hardhat compile",
@@ -42,6 +43,7 @@
     "check:compute": "node scripts/compute-check.js",
     "deploy:mainnet": "hardhat run scripts/deploy.js --network zerog",
     "deploy:testnet": "hardhat run scripts/deploy.js --network galileo",
+    "deploy:anchor": "hardhat run scripts/deploy-anchor.js --network zerog",
     "demo": "node scripts/demo.js"
   },
   "devDependencies": {
