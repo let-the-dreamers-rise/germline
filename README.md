@@ -111,6 +111,18 @@ test that proves each one, and the ones it does not catch.
 [docs/AUDIT.md](docs/AUDIT.md) covers the format, the CI setup, and branch
 protection.
 
+## For on-chain AI agents
+
+An agent that moves money is only as safe as its prompt, model and limits,
+and a quiet change to them leaves no trace. `init` also picks up ElizaOS
+characters, `SOUL.md` and `mcp.json` tool lists, so the agent's config
+history becomes public and impossible to rewrite. `contracts/GermlineGuard.sol`
+then puts a timelock on it: a vault that holds the agent's funds calls
+`guard.check(head)`, so every config change pauses the agent for a set delay
+while depositors read the change and decide whether to stay.
+[docs/AGENTS.md](docs/AGENTS.md) has the setup and is precise about what the
+guard can and can't prove.
+
 ## What it is not
 
 - Germline doesn't make you compliant. It produces evidence for one
@@ -141,6 +153,7 @@ protection.
 |---|---|
 | Hash chain, per-commit tracking, CLI, GitHub Action, evidence pack, browser verifier | done, tested |
 | Anchor registry contract | done, tested on a local chain; mainnet deployment needs a funded key |
+| Agent config timelock (`GermlineGuard`) | done, tested on a local chain against real logs; deploy per agent |
 | 0G Storage upload | code path done; first mainnet upload needs a funded key |
 | npm package, release tag | pending: `npx github:…` and the `@v0.4.0` action ref work once this branch is merged and tagged |
 
@@ -154,8 +167,9 @@ sdk/track.js                 per-commit tracking from git
 sdk/report.js                evidence pack (Markdown, JSON, CSV)
 sdk/github.js                pull-request approvals from the GitHub API
 contracts/GermlineAnchor.sol append-only anchor registry
+contracts/GermlineGuard.sol  timelock on an agent's anchored config
 web/verify.html              browser verifier, no upload, no third-party code
-docs/                        AUDIT (format, CI), BUSINESS, SEARCH (older lineage work)
+docs/                        AUDIT (format, CI), AGENTS, BUSINESS, SEARCH (older lineage work)
 test/                        mocha (SDK, CLI) and hardhat (contracts) tests
 ```
 

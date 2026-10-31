@@ -45,6 +45,16 @@ describe("init and track", function () {
     expect(discover(repo(FILES))).to.deep.equal(["config/agent.json", "prompts/system.md"]);
   });
 
+  it("finds on-chain agent configs: ElizaOS characters, SOUL files, MCP tool lists", function () {
+    const dir = repo({
+      "characters/trader.character.json": "{}",
+      "SOUL.md": "be careful",
+      "mcp.json": "{}",
+      "docs/privacy.md": "not ai config",
+    });
+    expect(discover(dir)).to.deep.equal(["SOUL.md", "characters/trader.character.json", "mcp.json"]);
+  });
+
   it("snapshots JSON as values, text as text, and missing files as null", function () {
     const dir = repo(FILES);
     expect(snapshot(["config/agent.json", "prompts/system.md", "gone.md"], dir)).to.deep.equal({

@@ -15,6 +15,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { openAuditLog, defaultActor } = require("./audit");
+const { depthOf, MAX_DEPTH } = require("./canonical");
 
 const CONFIG_FILE = path.join(".germline", "config.json");
 const VERSION = require("../package.json").version;
@@ -22,7 +23,7 @@ const VERSION = require("../package.json").version;
 // What a file holding AI behaviour tends to be called. Deliberately loose:
 // init shows what it found and the team edits the list, which is faster than
 // asking them to type paths from memory.
-const NAME_HINT = /(prompt|system[-_.]?message|instruction|persona|agent|assistant|llm|model[-_.]?config|ai[-_.]?config|guardrail|rubric|eval)/i;
+const NAME_HINT = /(prompt|system[-_.]?message|instruction|persona|agent|assistant|llm|model[-_.]?config|ai[-_.]?config|guardrail|rubric|eval|character|soul|mcp)/i;
 const EXT = /\.(json|ya?ml|md|txt|prompt|jinja2?|j2|hbs|mustache|toml)$/i;
 const SKIP_DIR = /(^|\/)(node_modules|\.git|\.germline|dist|build|out|coverage|vendor|\.next|\.venv|venv|__pycache__|artifacts|cache)(\/|$)/;
 const SKIP_FILE = /(^|\/)(package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|tsconfig.*\.json|\.eslintrc.*|CHANGELOG\.md|LICENSE.*|README.*)$/i;
@@ -31,7 +32,7 @@ const SKIP_FILE = /(^|\/)(package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|tscon
 // or a prompt ending in a newline would never match its working-tree copy.
 function git(args, cwd, raw = false) {
   try {
-    const out = execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 });
+    const out = execFileSync("git", args, { cwd, encoding: raw === "buffer" ? "buffer" : "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 });
     return raw ? out : out.trim();
   } catch (error) {
     return null;
@@ -70,7 +71,7 @@ function snapshot(files, cwd = process.cwd()) {
   const state = {};
   for (const file of files) {
     const full = safePath(cwd, file);
-    state[file] = fs.existsSync(full) ? parseContent(file, fs.readFileSync(full, "utf8")) : null;
+    state[file] = fs.existsSync(full) ? parseContent(file, fs.readFileSync(full)) : null;
   }
   return state;
 }
@@ -83,6 +84,15 @@ function loadConfig(cwd = process.cwd(), file = CONFIG_FILE) {
   const config = JSON.parse(fs.readFileSync(full, "utf8"));
   if (!Array.isArray(config.systems) || config.systems.length === 0) {
     throw new Error(file + " lists no systems to track");
+  }
+  // The log path comes from a file any committer can edit, and CI writes it
+  // into the job environment, so it gets the same checks as tracked paths
+  // plus a ban on control characters (a newline would inject a variable).
+  if (config.log !== undefined) {
+    if (typeof config.log !== "string" || /[\u0000-\u001f\u007f]/.test(config.log)) {
+      throw new Error(file + ": log must be a plain relative path");
+    }
+    safePath(cwd, config.log);
   }
   return config;
 }
@@ -149,10 +159,21 @@ function safePath(cwd, file) {
   return full;
 }
 
-function parseContent(file, text) {
+// Bytes to a recordable value. Text that isn't valid UTF-8 is kept as base64,
+// because decoding it lossily would make two different files look identical
+// and a real change would go unrecorded.
+function parseContent(file, bytes) {
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch (notUtf8) {
+    return { encoding: "base64", data: Buffer.from(bytes).toString("base64") };
+  }
   if (/\.json$/i.test(file)) {
     try {
-      return JSON.parse(text);
+      const value = JSON.parse(text);
+      // Too deep to hash safely: record it as text, which still changes when the file does.
+      if (depthOf(value) <= MAX_DEPTH) return value;
     } catch (ignored) {
       // An unparseable JSON file is still a file whose content changed.
     }
@@ -166,8 +187,10 @@ function snapshotAt(files, sha, cwd) {
   for (const file of files) {
     safePath(cwd, file);
     if (!SHA.test(sha)) throw new Error("not a commit hash: " + JSON.stringify(sha));
-    const text = git(["show", sha + ":" + file.split(path.sep).join("/")], cwd, true);
-    state[file] = text === null ? null : parseContent(file, text);
+    // "./" makes git resolve the path from cwd, as snapshot() and `git log --`
+    // do, so running from a monorepo subdirectory reads the right file.
+    const bytes = git(["show", sha + ":./" + file.split(path.sep).join("/")], cwd, "buffer");
+    state[file] = bytes === null ? null : parseContent(file, bytes);
   }
   return state;
 }

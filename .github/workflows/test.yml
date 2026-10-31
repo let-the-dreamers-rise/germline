@@ -2,13 +2,40 @@ name: test
 on: [push, pull_request]
 jobs:
   sdk:
+    # package.json promises node >= 18; test every LTS line people still run.
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+        os: [ubuntu-latest]
+        include:
+          - { node: 20, os: windows-latest }
+          - { node: 20, os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ matrix.node }}", cache: npm }
+      - run: npm ci
+      - run: git config --global user.email ci@example.com && git config --global user.name ci
+      - run: npm run test:sdk
+  package:
+    # What a customer actually installs: pack the tarball, install it into an
+    # empty project with no dev dependencies, and run the demo and the CLI.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
-      - run: npm ci
-      - run: npm run test:sdk
+        with: { node-version: 20 }
+      - run: npm pack --pack-destination "$RUNNER_TEMP"
+      - name: install the tarball into a fresh project
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir consumer && cd consumer && npm init -y > /dev/null
+          npm install "$RUNNER_TEMP"/germline-*.tgz --no-audit --no-fund
+          npx germline --version
+          npx germline demo --fast
+          node -e "const g = require('germline'); if (typeof g.openAuditLog !== 'function') process.exit(1)"
   contracts:
     runs-on: ubuntu-latest
     steps:

@@ -24,6 +24,11 @@ file:
 | list an anchor that never happened | registry lookup | `test/anchor.test.js` |
 | date entries after the block that anchored them | block timestamp | `test/anchor.test.js` |
 | two writers forking the chain by appending at once | lock file | `test/anchor.test.js` |
+| two files that decode to the same text (invalid UTF-8, a byte-order mark) | strict UTF-8 decoding | `test/hardening.test.js` |
+| a config nested deep enough to crash the verifier | depth limit, reported as a problem | `test/hardening.test.js` |
+| a log the browser verifier passes and the CLI fails | one shared core, `sdk/verify-core.js`, byte-identical in `web/` | `test/hardening.test.js` |
+| log text that prints a fake CI annotation (`::error`, `::stop-commands`) | every CLI line is made plain | `test/hardening.test.js` |
+| a committed config that points the log outside the repo, or injects a CI variable | the log path gets the tracked-path checks | `test/hardening.test.js` |
 
 ## What it does not guarantee
 

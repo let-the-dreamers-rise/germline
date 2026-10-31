@@ -73,7 +73,11 @@ runs:
           exit 1
         fi
         if [ -z "$LOG_BRANCH" ]; then
-          echo "GERMLINE_LOG=$(node "$G" path)" >> "$GITHUB_ENV"
+          LOG_PATH="$(node "$G" path)"
+          # The path comes from a committer-editable config; never let it
+          # carry a newline into GITHUB_ENV (that would set other variables).
+          case "$LOG_PATH" in *$'\n'*|*$'\r'*|"") echo "::error::unsafe log path in .germline/config.json"; exit 1;; esac
+          echo "GERMLINE_LOG=$LOG_PATH" >> "$GITHUB_ENV"
           echo "GERMLINE_LOG_DIR=$PWD" >> "$GITHUB_ENV"
           echo "GERMLINE_PUSH_BRANCH=$BRANCH" >> "$GITHUB_ENV"
           exit 0
