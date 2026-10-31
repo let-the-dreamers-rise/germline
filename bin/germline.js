@@ -201,14 +201,21 @@ Environment: GERMLINE_ANCHOR_KEY or DEPLOYER_KEY (anchor), ZEROG_RPC (default ht
 GERMLINE_ACTOR (default --actor), GERMLINE_REGISTRY (anchor registry). anchor --upload also publishes the log to
 0G Storage; install @0gfoundation/0g-storage-ts-sdk for that.`;
 
+// Everything the CLI prints can carry text from the log or the repository,
+// and in CI a line starting with "::" is a workflow command (fake "ok"
+// annotations, ::stop-commands::). So every line is made plain on the way out,
+// not just the ones someone remembered to wrap.
+for (const stream of ["log", "error"]) {
+  const write = console[stream].bind(console);
+  console[stream] = (...args) => write(args.map(String).join(" ").split("\n").map(plain).join("\n"));
+}
+
 async function main() {
   const { command, flags } = parse(process.argv.slice(2));
   let file = flags.log || null;
-  if (!file) {
-    try {
-      file = track.loadConfig().log || null;
-    } catch (ignored) {}
-  }
+  // No config is fine (the default log is used); a config that's there but
+  // unsafe or broken must fail, not silently fall back to another log.
+  if (!file && fs.existsSync(track.CONFIG_FILE)) file = track.loadConfig().log || null;
   file = file || ".germline/audit.jsonl";
   const log = openAuditLog(file);
 
@@ -393,11 +400,14 @@ async function main() {
         anchorChecks: chain ? chain.results : undefined,
         chainWarnings: chain ? chain.warnings : undefined,
       };
-      const text = format === "json" ? renderJson(log.entries(), options) : format === "csv" ? renderCsv(log.entries()) : format === "cc81" ? renderCc81(log.entries()) : renderMarkdown(log.entries(), options);
+      const raw = format === "json" ? renderJson(log.entries(), options) : format === "csv" ? renderCsv(log.entries()) : format === "cc81" ? renderCc81(log.entries()) : renderMarkdown(log.entries(), options);
+      // Control characters from the log have no business in an evidence pack
+      // (JSON already escapes them); keep only tabs and line breaks.
+      const text = raw.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, " ");
       if (flags.out) {
         fs.writeFileSync(flags.out, text, "utf8");
         console.log("wrote " + flags.out);
-      } else process.stdout.write(text);
+      } else process.stdout.write(text.replace(/^::/gm, ": :"));
       return;
     }
 

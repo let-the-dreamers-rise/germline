@@ -112,100 +112,15 @@
 
 <!-- ethers 6.17.0 (MIT), vendored so the verifier loads no third-party code. -->
 <script src="vendor/ethers-6.17.0.umd.min.js"></script>
+<!-- The verification core, byte-identical to sdk/verify-core.js (a test checks). -->
+<script src="verify-core.js"></script>
 <script>
 "use strict";
-// A line-for-line port of verifyEntries() and the registry part of
-// verifyChain() in sdk/audit.js. If the two ever disagree, the CLI is right
-// and this page is a bug.
-
-const FORMAT = "germline.audit/1";
-const GENESIS = "0x" + "0".repeat(64);
-const SKEW = 5 * 60 * 1000;
-const ISO_TS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+// Every check runs in GermlineVerify, the same code `germline verify` runs.
+// This script only reads inputs and draws results.
+const { readEntries, verifyEntries } = GermlineVerify;
 const HASH = /^0x[0-9a-fA-F]{64}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
-const ANCHOR_TAG = "0x67726d6c";
-const REGISTRY_ABI = [
-  "function anchorCount(bytes32 logId, address anchorer) view returns (uint256)",
-  "function anchorsOf(bytes32 logId, address anchorer, uint256 from, uint256 count) view returns (tuple(uint64 covered, uint64 timestamp, uint64 blockNumber, bytes32 head, bytes32 storageRoot)[])",
-];
-
-function stableStringify(value) {
-  const seen = new Set();
-  return (function write(v) {
-    if (v === null) return "null";
-    const t = typeof v;
-    if (t === "number") {
-      if (!Number.isFinite(v)) throw new TypeError("non-finite number");
-      return JSON.stringify(v);
-    }
-    if (t === "string" || t === "boolean") return JSON.stringify(v);
-    if (t !== "object") throw new TypeError("cannot hash a " + t);
-    if (seen.has(v)) throw new TypeError("cycle");
-    seen.add(v);
-    const out = Array.isArray(v)
-      ? "[" + v.map(write).join(",") + "]"
-      : "{" + Object.keys(v).sort().map((k) => JSON.stringify(k) + ":" + write(v[k])).join(",") + "}";
-    seen.delete(v);
-    return out;
-  })(value);
-}
-const hashOf = (v) => ethers.keccak256(ethers.toUtf8Bytes(stableStringify(v)));
-
-function readEntries(text) {
-  const entries = [];
-  text.split("\n").forEach((line, i) => {
-    if (!line.trim()) return;
-    try {
-      const e = JSON.parse(line);
-      if (e === null || typeof e !== "object" || Array.isArray(e)) throw new Error();
-      if (JSON.stringify(e) !== line.replace(/\r$/, "")) Object.defineProperty(e, "__noncanonical", { value: true });
-      entries.push(e);
-    } catch (_) {
-      entries.push({ __unparseable: true, line: i + 1 });
-    }
-  });
-  return entries;
-}
-
-function verifyEntries(entries) {
-  const problems = [], warnings = [];
-  let prev = GENESIS, lastTs = null;
-  entries.forEach((e, i) => {
-    if (e.__unparseable) {
-      problems.push({ seq: i, reason: "line " + e.line + " is not a valid entry" });
-      prev = null;
-      return;
-    }
-    const ts = typeof e.ts === "string" && ISO_TS.test(e.ts) ? Date.parse(e.ts) : NaN;
-    if (!Number.isFinite(ts)) problems.push({ seq: i, reason: "timestamp is not an ISO date with a time zone" });
-    else {
-      if (lastTs !== null && ts < lastTs - SKEW) warnings.push({ seq: i, reason: "timestamp is earlier than the entry before it" });
-      lastTs = ts;
-    }
-    if (e.__noncanonical) problems.push({ seq: i, reason: "line is not in canonical form" });
-    if (e.format !== FORMAT) problems.push({ seq: i, reason: "unknown format" });
-    if (e.seq !== i) problems.push({ seq: i, reason: "sequence number " + e.seq + ", expected " + i });
-    if (prev !== null && e.prev !== prev) problems.push({ seq: i, reason: "does not link to the entry before it" });
-    const { hash, ...rest } = e;
-    let expected = null;
-    try { expected = hashOf(rest); } catch (err) { problems.push({ seq: i, reason: "cannot be hashed" }); }
-    if (expected !== null && hash !== expected) problems.push({ seq: i, reason: "contents do not match its hash (edited after writing)" });
-    if (e.kind === "review") {
-      const target = entries[e.reviews];
-      if (!Number.isInteger(e.reviews) || e.reviews >= i || !target || target.hash !== e.reviewsHash) {
-        problems.push({ seq: i, reason: "review does not point at an earlier entry with the hash it names" });
-      }
-    }
-    if (e.kind === "change" && e.after !== undefined && e.configRoot !== (e.after === null ? null : hashOf(e.after))) {
-      problems.push({ seq: i, reason: "stored config does not match its recorded root" });
-    }
-    prev = e.hash;
-  });
-  const head = entries.length ? entries[entries.length - 1].hash || null : GENESIS;
-  const logId = entries.length && !entries[0].__unparseable ? entries[0].hash || null : null;
-  return { ok: problems.length === 0, entries: entries.length, head, logId, problems, warnings };
-}
 
 // ---- rendering: text only, never innerHTML with log content ------------
 function el(tag, attrs, ...children) {
@@ -273,49 +188,30 @@ async function checkChain() {
   const anchorer = document.getElementById("anchorer").value.trim();
   const registry = document.getElementById("registry").value.trim();
   const rpc = document.getElementById("rpc").value.trim();
-  const notes = [];
-  const fail = (title, detail) => render(current, verdict("fail", title, detail, notes));
   if (!HASH.test(logId) || !ADDRESS.test(anchorer) || !ADDRESS.test(registry)) {
-    return fail("Pin all three values to check the chain", "Log ID (32-byte hex), anchorer and registry (addresses), from your own records.");
+    return render(current, verdict("fail", "Pin all three values to check the chain", "Log ID (32-byte hex), anchorer and registry (addresses), from your own records."));
   }
-  const check = verifyEntries(current);
-  if (String(check.logId).toLowerCase() !== logId.toLowerCase()) return fail("Log ID does NOT match your pin");
   btn.disabled = true;
   btn.textContent = "Checking…";
   try {
     const provider = new ethers.JsonRpcProvider(rpc);
-    const contract = new ethers.Contract(registry, REGISTRY_ABI, provider);
-    const count = Number(await contract.anchorCount(logId, anchorer));
-    if (count === 0) return fail("The registry holds no anchors for this log from that address");
-    const history = [];
-    for (let from = 0; from < count; from += 100) history.push(...(await contract.anchorsOf(logId, anchorer, from, 100)));
-    let failed = 0;
-    for (const [i, a] of history.entries()) {
-      const covered = Number(a.covered);
-      const entry = current[covered - 1];
-      if (!Number.isSafeInteger(covered) || covered > current.length) {
-        failed++;
-        notes.push("anchor #" + i + " covers " + a.covered + " entries; this file has " + current.length + " (truncated)");
-      } else if (!entry || entry.hash !== a.head) {
-        failed++;
-        notes.push("anchor #" + i + ": entry " + (covered - 1) + " is not the anchored head (rewritten)");
-      } else {
-        const stored = a.storageRoot && a.storageRoot !== "0x" + "0".repeat(64) ? "; log copy in 0G Storage, root " + a.storageRoot : "";
-        notes.push("anchor #" + i + ": entries 0–" + (covered - 1) + " match, block " + a.blockNumber + stored);
+    const result = await GermlineVerify.verifyChain(current, provider, { logId, anchorer, registry });
+    const rows = result.results;
+    const notes = rows.map((r) => {
+      if (!r.ok) return (r.source === "registry" && r.index != null ? "anchor #" + r.index + ": " : "") + r.reason;
+      if (r.source === "registry") {
+        const stored = r.storageRoot && r.storageRoot !== GermlineVerify.GENESIS ? "; log copy in 0G Storage, root " + r.storageRoot : "";
+        return "anchor #" + r.index + ": entries 0–" + (r.entries - 1) + " match, block " + r.blockNumber + stored;
       }
-    }
-    const listed = current.filter((e) => e.kind === "anchor" && e.mode === "registry" && String(e.anchorer).toLowerCase() === anchorer.toLowerCase());
-    for (const e of listed) {
-      if (!history.some((a, i) => i === e.index && a.head === e.anchoredHead)) {
-        failed++;
-        notes.push("the file lists anchor #" + e.index + " but the registry does not hold it");
-      }
-    }
-    render(current, failed
-      ? verdict("fail", "Does NOT match 0G Chain", failed + " of " + history.length + " check(s) failed", notes)
-      : verdict("ok", "Matches 0G Chain", history.length + " anchor(s) from " + anchorer + " all agree with this file", notes));
+      return "transaction anchor " + r.txHash + " matches";
+    }).concat(result.warnings.map((w) => "warning: " + w));
+    const failed = rows.filter((r) => !r.ok).length;
+    const anchors = rows.filter((r) => r.source !== "pin").length;
+    render(current, failed || !anchors
+      ? verdict("fail", "Does NOT match 0G Chain", (failed || 1) + " of " + Math.max(rows.length, 1) + " check(s) failed", notes.length ? notes : ["nothing was anchored"])
+      : verdict("ok", "Matches 0G Chain", anchors + " anchor(s) from " + anchorer + " all agree with this file", notes));
   } catch (err) {
-    fail("Could not read 0G Chain", String(err.shortMessage || err.message || err).slice(0, 200));
+    render(current, verdict("fail", "Could not read 0G Chain", String(err.shortMessage || err.message || err).slice(0, 200)));
   } finally {
     btn.disabled = false;
     btn.textContent = "Check against 0G Chain";
@@ -323,8 +219,10 @@ async function checkChain() {
 }
 
 function load(file) {
-  file.text().then((text) => {
-    current = readEntries(text);
+  // Raw bytes, not file.text(): text() would strip a BOM and replace invalid
+  // UTF-8, so this page would pass a file the CLI rejects.
+  file.arrayBuffer().then((buffer) => {
+    current = readEntries(new Uint8Array(buffer));
     document.getElementById("chainBtn").disabled = false;
     render(current);
   });
@@ -349,9 +247,9 @@ document.getElementById("chainBtn").addEventListener("click", checkChain);
   if (!url || !/^https:\/\//.test(url)) return;
   out.replaceChildren(el("div", { class: "panel muted" }, "Fetching " + url + " …"));
   fetch(url, { cache: "no-store" })
-    .then((r) => (r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status))))
-    .then((text) => {
-      current = readEntries(text);
+    .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error("HTTP " + r.status))))
+    .then((buffer) => {
+      current = readEntries(new Uint8Array(buffer));
       document.getElementById("chainBtn").disabled = false;
       render(current);
       if (q.get("logId") && q.get("anchorer") && q.get("registry")) checkChain();
