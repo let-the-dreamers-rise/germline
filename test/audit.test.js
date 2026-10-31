@@ -4,7 +4,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { openAuditLog, verifyEntries, diff, ANCHOR_TAG } = require("../sdk/audit");
-const { renderMarkdown } = require("../sdk/report");
+const { renderMarkdown, renderJson, renderCsv } = require("../sdk/report");
 
 // Plain mocha, no hardhat: the audit trail must work for a team that never
 // touches a chain, so its tests must not need one either.
@@ -207,6 +207,111 @@ describe("audit trail", function () {
     expect(result.problems.length).to.be.greaterThan(0);
   });
 
+  describe("hostile and damaged logs", function () {
+    it("does not crash on a null, numeric or array line", function () {
+      for (const bad of ["null", "42", "[1]"]) {
+        const file = tempLog();
+        const log = openAuditLog(file);
+        log.record({ system: "s", actor: "a", after: AFTER });
+        fs.appendFileSync(file, bad + "\n");
+        const result = log.verify();
+        expect(result.ok).to.equal(false);
+        expect(() => renderMarkdown(log.entries())).to.not.throw();
+      }
+    });
+
+    it("rejects lines that are not the canonical bytes of their value", function () {
+      const file = tempLog();
+      openAuditLog(file).record({ system: "s", actor: "alice", after: AFTER });
+      const line = fs.readFileSync(file, "utf8").trim();
+      fs.writeFileSync(file, line.replace('"actor":"alice"', '"actor":"mallory","actor":"alice"') + "\n");
+      const result = openAuditLog(file).verify();
+      expect(result.ok).to.equal(false);
+      expect(result.problems[0].reason).to.match(/canonical/);
+    });
+
+    it("rejects timestamps without a time zone", function () {
+      const log = openAuditLog(tempLog(), { clock: () => "2026-10-30T12:00:00" });
+      log.record({ system: "s", actor: "a", after: AFTER });
+      expect(log.verify().ok).to.equal(false);
+    });
+
+    it("appends safely to a file that lost its trailing newline", function () {
+      const file = tempLog();
+      const log = openAuditLog(file);
+      log.record({ system: "s", actor: "a", after: AFTER });
+      fs.writeFileSync(file, fs.readFileSync(file, "utf8").trimEnd());
+      log.record({ system: "s", actor: "a", after: BEFORE });
+      expect(log.verify()).to.include({ ok: true, entries: 2 });
+    });
+
+    it("hashes exactly what it writes, even for values with toJSON", function () {
+      const log = openAuditLog(tempLog());
+      log.record({ system: "s", actor: "a", after: AFTER, eval: { artifact: Buffer.from("hi"), at: new Date(0) } });
+      log.record({ system: "s", actor: "a", after: BEFORE });
+      expect(log.verify().ok).to.equal(true);
+    });
+
+    it("redaction keeps leaf roots, so later changes still name the setting", function () {
+      const log = openAuditLog(tempLog());
+      log.track("s", BEFORE, { actor: "a", redact: true });
+      const next = log.track("s", AFTER, { actor: "a", redact: true });
+      expect(next.changes).to.deep.equal([{ key: "temperature" }]);
+      expect(JSON.stringify(next)).to.not.include("0.2");
+      expect(log.verify().ok).to.equal(true);
+    });
+
+    it("diffs nested settings and prompt lines", function () {
+      const changes = diff({ p: { system: "a\nb\nc" }, t: { x: 1 } }, { p: { system: "a\nB\nc" }, t: { x: 2 } });
+      expect(changes.map((c) => c.key)).to.deep.equal(["p › system", "t › x"]);
+      expect(changes[0].lines).to.deep.equal(["- b", "+ B"]);
+    });
+  });
+
+  describe("evidence pack is safe to hand an auditor", function () {
+    function forged() {
+      const file = tempLog();
+      const log = openAuditLog(file);
+      log.record({ system: "s", actor: "a", after: AFTER, reason: "[click](https://evil.example) **approved** <img src=x>\r| x |" });
+      return log;
+    }
+
+    it("escapes markdown and HTML from log values", function () {
+      const md = renderMarkdown(forged().entries());
+      expect(md).to.not.match(/[^\\]\]\(https:\/\/evil/);
+      expect(md).to.not.match(/[^\\]<img/);
+      expect(md).to.not.include("**approved**");
+    });
+
+    it("never takes verification pins from the file under audit", function () {
+      const log = forged();
+      const md = renderMarkdown(log.entries());
+      const command = md.split("```bash")[1];
+      expect(command).to.include("<log ID from your records>");
+      expect(command).to.not.include(log.verify().logId);
+      const pinned = renderMarkdown(log.entries(), { pins: { logId: "0x" + "1".repeat(64) } });
+      expect(pinned).to.include("does NOT match the pinned value");
+    });
+
+    it("states what the log does not show instead of overclaiming", function () {
+      const md = renderMarkdown(forged().entries());
+      expect(md).to.match(/CC8\.1 \(change management\) \| Partial \| Of 1 change\(s\): 1 give a reason or ticket, 0 record an approval, 0 carry test evidence/);
+      expect(md).to.match(/ISO\/IEC 42001 \(AI management system\) \| Missing/);
+      expect(md).to.not.match(/Supported|compliant\b/);
+    });
+
+    it("exports JSON and spreadsheet-safe CSV", function () {
+      const log = openAuditLog(tempLog());
+      log.record({ system: "s", actor: "a", after: AFTER, reason: '=HYPERLINK("x")', eval: { score: 0.9 } });
+      const json = JSON.parse(renderJson(log.entries()));
+      expect(json.integrity.ok).to.equal(true);
+      expect(json.changes[0]).to.include({ evalScore: 0.9 });
+      const csv = renderCsv(log.entries()).split("\n");
+      expect(csv[0]).to.match(/^seq,ts,system,actor/);
+      expect(csv[1]).to.include(`"'=HYPERLINK(""x"")"`);
+    });
+  });
+
   describe("cli", function () {
     const bin = path.join(__dirname, "..", "bin", "germline.js");
 
@@ -229,6 +334,42 @@ describe("audit trail", function () {
         code = error.status;
       }
       expect(code).to.equal(1);
+    });
+
+    function attempt(dir, ...args) {
+      try {
+        return { code: 0, out: execFileSync("node", [bin, ...args], { cwd: dir, encoding: "utf8", stdio: "pipe" }) };
+      } catch (error) {
+        return { code: error.status, out: String(error.stdout) + String(error.stderr) };
+      }
+    }
+
+    it("checks a pinned log id offline and rejects unknown or misplaced options", function () {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "germline-cli-"));
+      fs.writeFileSync(path.join(dir, "new.json"), JSON.stringify(AFTER));
+      const file = path.join(dir, "audit.jsonl");
+      expect(attempt(dir, "record", "--system", "bot", "--actor", "ash", "--after", "new.json", "--reason", "--force-pushed hotfix", "--log", file).code).to.equal(0);
+      expect(openAuditLog(file).entries()[0].reason).to.equal("--force-pushed hotfix");
+      const id = attempt(dir, "id", "--log", file).out.trim();
+      expect(attempt(dir, "verify", "--log", file, "--log-id", id).code).to.equal(0);
+      expect(attempt(dir, "verify", "--log", file, "--log-id", "0x" + "2".repeat(64))).to.include({ code: 1 });
+      expect(attempt(dir, "verify", "--log", file, "--strict").code).to.equal(1);
+      expect(attempt(dir, "verify", "--log", file, "--anchorer", "0x" + "a".repeat(40)).out).to.include("add --chain");
+      expect(attempt(dir, "verify", "--log", file, "--anchorr", "0x1").out).to.include("unknown option --anchorr");
+      expect(attempt(dir, "--version").out.trim()).to.equal(require("../package.json").version);
+      expect(attempt(dir, "verify", "--log", file, "--log-id", "").out).to.include("--log-id is empty");
+      const upload = attempt(dir, "anchor", "--log", file, "--upload");
+      expect(upload.code).to.equal(1);
+      expect(upload.out).to.include("0G Storage is public");
+    });
+
+    it("writes json and csv reports", function () {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "germline-cli-"));
+      fs.writeFileSync(path.join(dir, "new.json"), JSON.stringify(AFTER));
+      attempt(dir, "record", "--system", "bot", "--actor", "ash", "--after", "new.json", "--score", "0.9");
+      expect(attempt(dir, "report", "--out", "pack.csv").code).to.equal(0);
+      expect(fs.readFileSync(path.join(dir, "pack.csv"), "utf8")).to.match(/^seq,ts/);
+      expect(JSON.parse(attempt(dir, "report", "--format", "json").out).changes).to.have.length(1);
     });
   });
 });

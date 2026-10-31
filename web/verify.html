@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Germline verifier</title>
+<meta name="description" content="Check a Germline AI configuration audit log in your browser. The file never leaves your machine." />
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --border: #e2e2dc;
+    --text: #17181a;
+    --dim: #5d6168;
+    --faint: #8b9098;
+    --good: #1f7a4a;
+    --good-bg: #e7f4ec;
+    --bad: #b3392b;
+    --bad-bg: #fbeae7;
+    --warn: #8a5a00;
+    --warn-bg: #fdf3dd;
+    --accent: #b9791b;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b0c0e; --panel: #131519; --border: #262a32; --text: #e9ebef; --dim: #a0a6b0; --faint: #687080;
+      --good: #4cc38a; --good-bg: #10261b; --bad: #ec7a66; --bad-bg: #2a1512; --warn: #e2b24c; --warn-bg: #2a2110; --accent: #e2a63c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0c0e; --panel: #131519; --border: #262a32; --text: #e9ebef; --dim: #a0a6b0; --faint: #687080;
+    --good: #4cc38a; --good-bg: #10261b; --bad: #ec7a66; --bad-bg: #2a1512; --warn: #e2b24c; --warn-bg: #2a2110; --accent: #e2a63c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 var(--sans); }
+  main { max-width: 980px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--dim); margin: 0 0 28px; max-width: 680px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+  .drop { border: 1.5px dashed var(--border); border-radius: 10px; padding: 28px; text-align: center; cursor: pointer; color: var(--dim); }
+  .drop.over { border-color: var(--accent); color: var(--text); }
+  .drop strong { color: var(--text); }
+  label { display: block; font-size: 12px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; margin: 12px 0 4px; }
+  input[type=text] { width: 100%; font: 13px var(--mono); padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+  button { font: 600 14px var(--sans); padding: 9px 16px; border-radius: 6px; border: 1px solid var(--text); background: var(--text); color: var(--bg); cursor: pointer; margin-top: 14px; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .verdict { border-radius: 8px; padding: 14px 16px; font-weight: 600; margin-bottom: 10px; }
+  .ok { background: var(--good-bg); color: var(--good); }
+  .fail { background: var(--bad-bg); color: var(--bad); }
+  .warn { background: var(--warn-bg); color: var(--warn); }
+  .verdict small { display: block; font-weight: 400; color: inherit; opacity: 0.9; margin-top: 2px; }
+  ul.notes { margin: 6px 0 0; padding-left: 18px; }
+  ul.notes li { margin: 2px 0; }
+  .mono { font-family: var(--mono); font-size: 12.5px; word-break: break-all; }
+  .table { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+  td.bad { color: var(--bad); }
+  .muted { color: var(--faint); }
+  .hidden { display: none; }
+  footer { color: var(--faint); font-size: 13px; margin-top: 28px; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Verify an AI change log</h1>
+  <p class="lede">
+    Drop a Germline <span class="mono">audit.jsonl</span> here to check that no entry was edited, removed or reordered,
+    and optionally that it matches what was anchored on 0G Chain. Everything runs in this page; the file never leaves your machine.
+  </p>
+
+  <div class="panel">
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose an audit log">
+      <strong>Drop audit.jsonl</strong> or click to choose a file
+      <input type="file" id="file" accept=".jsonl,.json,.txt" class="hidden" />
+    </div>
+  </div>
+
+  <div class="panel">
+    <strong>Pins from your own records</strong>
+    <div class="muted" style="font-size:13px">Values you were given when the log was set up, kept somewhere other than the log. Pinning them is what makes a forged copy fail. Leave blank to skip.</div>
+    <label for="logId">Log ID</label>
+    <input type="text" id="logId" placeholder="0x… (from germline id)" spellcheck="false" />
+    <div class="row">
+      <div>
+        <label for="anchorer">Anchorer address</label>
+        <input type="text" id="anchorer" placeholder="0x…" spellcheck="false" />
+      </div>
+      <div>
+        <label for="registry">Registry address</label>
+        <input type="text" id="registry" placeholder="0x… (GermlineAnchor)" spellcheck="false" />
+      </div>
+    </div>
+    <label for="rpc">0G RPC</label>
+    <input type="text" id="rpc" value="https://evmrpc.0g.ai" spellcheck="false" />
+    <button id="chainBtn" disabled>Check against 0G Chain</button>
+  </div>
+
+  <div id="out"></div>
+
+  <footer>
+    Same checks as <span class="mono">npx germline verify --log-id … --chain --anchorer … --registry … --strict</span>.
+    <a href="https://github.com/let-the-dreamers-rise/germline">Source</a>.
+  </footer>
+</main>
+
+<!-- ethers 6.17.0 (MIT), vendored so the verifier loads no third-party code. -->
+<script src="vendor/ethers-6.17.0.umd.min.js"></script>
+<script>
+"use strict";
+// A line-for-line port of verifyEntries() and the registry part of
+// verifyChain() in sdk/audit.js. If the two ever disagree, the CLI is right
+// and this page is a bug.
+
+const FORMAT = "germline.audit/1";
+const GENESIS = "0x" + "0".repeat(64);
+const SKEW = 5 * 60 * 1000;
+const ISO_TS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+const HASH = /^0x[0-9a-fA-F]{64}$/;
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const ANCHOR_TAG = "0x67726d6c";
+const REGISTRY_ABI = [
+  "function anchorCount(bytes32 logId, address anchorer) view returns (uint256)",
+  "function anchorsOf(bytes32 logId, address anchorer, uint256 from, uint256 count) view returns (tuple(uint64 covered, uint64 timestamp, uint64 blockNumber, bytes32 head, bytes32 storageRoot)[])",
+];
+
+function stableStringify(value) {
+  const seen = new Set();
+  return (function write(v) {
+    if (v === null) return "null";
+    const t = typeof v;
+    if (t === "number") {
+      if (!Number.isFinite(v)) throw new TypeError("non-finite number");
+      return JSON.stringify(v);
+    }
+    if (t === "string" || t === "boolean") return JSON.stringify(v);
+    if (t !== "object") throw new TypeError("cannot hash a " + t);
+    if (seen.has(v)) throw new TypeError("cycle");
+    seen.add(v);
+    const out = Array.isArray(v)
+      ? "[" + v.map(write).join(",") + "]"
+      : "{" + Object.keys(v).sort().map((k) => JSON.stringify(k) + ":" + write(v[k])).join(",") + "}";
+    seen.delete(v);
+    return out;
+  })(value);
+}
+const hashOf = (v) => ethers.keccak256(ethers.toUtf8Bytes(stableStringify(v)));
+
+function readEntries(text) {
+  const entries = [];
+  text.split("\n").forEach((line, i) => {
+    if (!line.trim()) return;
+    try {
+      const e = JSON.parse(line);
+      if (e === null || typeof e !== "object" || Array.isArray(e)) throw new Error();
+      if (JSON.stringify(e) !== line.replace(/\r$/, "")) Object.defineProperty(e, "__noncanonical", { value: true });
+      entries.push(e);
+    } catch (_) {
+      entries.push({ __unparseable: true, line: i + 1 });
+    }
+  });
+  return entries;
+}
+
+function verifyEntries(entries) {
+  const problems = [], warnings = [];
+  let prev = GENESIS, lastTs = null;
+  entries.forEach((e, i) => {
+    if (e.__unparseable) {
+      problems.push({ seq: i, reason: "line " + e.line + " is not a valid entry" });
+      prev = null;
+      return;
+    }
+    const ts = typeof e.ts === "string" && ISO_TS.test(e.ts) ? Date.parse(e.ts) : NaN;
+    if (!Number.isFinite(ts)) problems.push({ seq: i, reason: "timestamp is not an ISO date with a time zone" });
+    else {
+      if (lastTs !== null && ts < lastTs - SKEW) warnings.push({ seq: i, reason: "timestamp is earlier than the entry before it" });
+      lastTs = ts;
+    }
+    if (e.__noncanonical) problems.push({ seq: i, reason: "line is not in canonical form" });
+    if (e.format !== FORMAT) problems.push({ seq: i, reason: "unknown format" });
+    if (e.seq !== i) problems.push({ seq: i, reason: "sequence number " + e.seq + ", expected " + i });
+    if (prev !== null && e.prev !== prev) problems.push({ seq: i, reason: "does not link to the entry before it" });
+    const { hash, ...rest } = e;
+    let expected = null;
+    try { expected = hashOf(rest); } catch (err) { problems.push({ seq: i, reason: "cannot be hashed" }); }
+    if (expected !== null && hash !== expected) problems.push({ seq: i, reason: "contents do not match its hash (edited after writing)" });
+    if (e.kind === "change" && e.after !== undefined && e.configRoot !== (e.after === null ? null : hashOf(e.after))) {
+      problems.push({ seq: i, reason: "stored config does not match its recorded root" });
+    }
+    prev = e.hash;
+  });
+  const head = entries.length ? entries[entries.length - 1].hash || null : GENESIS;
+  const logId = entries.length && !entries[0].__unparseable ? entries[0].hash || null : null;
+  return { ok: problems.length === 0, entries: entries.length, head, logId, problems, warnings };
+}
+
+// ---- rendering: text only, never innerHTML with log content ------------
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+  for (const c of children) node.append(c instanceof Node ? c : document.createTextNode(c == null ? "" : String(c)));
+  return node;
+}
+function verdict(kind, title, detail, notes) {
+  const box = el("div", { class: "verdict " + kind }, title);
+  if (detail) box.append(el("small", {}, detail));
+  if (notes && notes.length) box.append(el("ul", { class: "notes" }, ...notes.map((n) => el("li", {}, n))));
+  return box;
+}
+function clip(v, n) {
+  const s = typeof v === "string" ? v : JSON.stringify(v);
+  return s && s.length > n ? s.slice(0, n) + "… (" + s.length + " chars)" : s;
+}
+
+let current = null;
+const out = document.getElementById("out");
+
+function render(entries, chain) {
+  const check = verifyEntries(entries);
+  const pinId = document.getElementById("logId").value.trim();
+  out.replaceChildren();
+  const panel = el("div", { class: "panel" });
+  if (check.ok) panel.append(verdict("ok", "Hash chain verifies", check.entries + " entries, none edited, removed or reordered since they were written."));
+  else panel.append(verdict("fail", "Hash chain does NOT verify", check.problems.length + " problem(s)", check.problems.map((p) => "entry " + p.seq + ": " + p.reason)));
+  if (check.warnings.length) panel.append(verdict("warn", "Warnings", null, check.warnings.map((w) => "entry " + w.seq + ": " + w.reason)));
+  if (pinId) {
+    if (!HASH.test(pinId)) panel.append(verdict("fail", "The pinned log ID is not a 32-byte hex value"));
+    else if (String(check.logId).toLowerCase() === pinId.toLowerCase()) panel.append(verdict("ok", "Log ID matches your pin"));
+    else panel.append(verdict("fail", "Log ID does NOT match your pin", "This file is a different log, or it was rewritten from the start."));
+  }
+  const anchors = entries.filter((e) => e.kind === "anchor");
+  if (chain) panel.append(chain);
+  else if (!anchors.length) panel.append(verdict("warn", "Never anchored", "Until it is anchored on 0G, whoever holds this file could rewrite all of it consistently."));
+  else panel.append(verdict("warn", "Anchors not checked yet", anchors.length + " anchor record(s) in the file. Fill in the pins and check against 0G Chain."));
+  panel.append(el("div", { class: "muted mono", style: "margin-top:10px" }, "log id (from the file) " + (check.logId || "-")));
+  panel.append(el("div", { class: "muted mono" }, "head " + check.head));
+  out.append(panel);
+
+  const changes = entries.filter((e) => e.kind === "change");
+  const table = el("table", {}, el("tr", {}, ...["#", "When", "System", "Who", "What changed", "Why"].map((h) => el("th", {}, h))));
+  const bad = new Set(check.problems.map((p) => p.seq));
+  for (const e of changes) {
+    const what = (Array.isArray(e.changes) ? e.changes : [])
+      .map((c) => (c.from === undefined && c.to === undefined ? c.key + " (redacted)" : c.lines ? c.key + ": " + c.lines.length + " line(s)" : c.key + ": " + clip(c.from, 40) + " → " + clip(c.to, 40)))
+      .join("; ");
+    table.append(
+      el("tr", {},
+        el("td", bad.has(e.seq) ? { class: "bad" } : {}, e.seq),
+        el("td", {}, e.ts), el("td", {}, e.system), el("td", {}, e.actor),
+        el("td", {}, what || "(baseline)"), el("td", {}, [e.reason, e.ticket].filter(Boolean).join(" · ") || "-"))
+    );
+  }
+  out.append(el("div", { class: "panel" }, el("strong", {}, changes.length + " change(s)"), el("div", { class: "table" }, table)));
+}
+
+async function checkChain() {
+  const btn = document.getElementById("chainBtn");
+  const logId = document.getElementById("logId").value.trim();
+  const anchorer = document.getElementById("anchorer").value.trim();
+  const registry = document.getElementById("registry").value.trim();
+  const rpc = document.getElementById("rpc").value.trim();
+  const notes = [];
+  const fail = (title, detail) => render(current, verdict("fail", title, detail, notes));
+  if (!HASH.test(logId) || !ADDRESS.test(anchorer) || !ADDRESS.test(registry)) {
+    return fail("Pin all three values to check the chain", "Log ID (32-byte hex), anchorer and registry (addresses), from your own records.");
+  }
+  const check = verifyEntries(current);
+  if (String(check.logId).toLowerCase() !== logId.toLowerCase()) return fail("Log ID does NOT match your pin");
+  btn.disabled = true;
+  btn.textContent = "Checking…";
+  try {
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const contract = new ethers.Contract(registry, REGISTRY_ABI, provider);
+    const count = Number(await contract.anchorCount(logId, anchorer));
+    if (count === 0) return fail("The registry holds no anchors for this log from that address");
+    const history = [];
+    for (let from = 0; from < count; from += 100) history.push(...(await contract.anchorsOf(logId, anchorer, from, 100)));
+    let failed = 0;
+    for (const [i, a] of history.entries()) {
+      const covered = Number(a.covered);
+      const entry = current[covered - 1];
+      if (!Number.isSafeInteger(covered) || covered > current.length) {
+        failed++;
+        notes.push("anchor #" + i + " covers " + a.covered + " entries; this file has " + current.length + " (truncated)");
+      } else if (!entry || entry.hash !== a.head) {
+        failed++;
+        notes.push("anchor #" + i + ": entry " + (covered - 1) + " is not the anchored head (rewritten)");
+      } else notes.push("anchor #" + i + ": entries 0–" + (covered - 1) + " match, block " + a.blockNumber);
+    }
+    const listed = current.filter((e) => e.kind === "anchor" && e.mode === "registry" && String(e.anchorer).toLowerCase() === anchorer.toLowerCase());
+    for (const e of listed) {
+      if (!history.some((a, i) => i === e.index && a.head === e.anchoredHead)) {
+        failed++;
+        notes.push("the file lists anchor #" + e.index + " but the registry does not hold it");
+      }
+    }
+    render(current, failed
+      ? verdict("fail", "Does NOT match 0G Chain", failed + " of " + history.length + " check(s) failed", notes)
+      : verdict("ok", "Matches 0G Chain", history.length + " anchor(s) from " + anchorer + " all agree with this file", notes));
+  } catch (err) {
+    fail("Could not read 0G Chain", String(err.shortMessage || err.message || err).slice(0, 200));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Check against 0G Chain";
+  }
+}
+
+function load(file) {
+  file.text().then((text) => {
+    current = readEntries(text);
+    document.getElementById("chainBtn").disabled = false;
+    render(current);
+  });
+}
+const drop = document.getElementById("drop");
+const input = document.getElementById("file");
+drop.addEventListener("click", () => input.click());
+drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") input.click(); });
+input.addEventListener("change", () => input.files[0] && load(input.files[0]));
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && load(e.dataTransfer.files[0]); });
+document.getElementById("chainBtn").addEventListener("click", checkChain);
+document.getElementById("logId").addEventListener("input", () => current && render(current));
+</script>
+</body>
+</html>

@@ -1,0 +1,150 @@
+name: Germline AI config audit trail
+description: Record every change to your prompts and AI config in a tamper-evident log, verify it, and anchor it on 0G.
+branding:
+  icon: shield
+  color: green
+
+# Order matters. The log is pushed before it is anchored, so an anchor only
+# ever covers entries that are already on the branch. Anchoring first and then
+# losing a push race would leave a chain record of entries the branch never
+# got, and verification would fail for an honest log forever. Use it with
+# `concurrency: germline` in the workflow (germline init writes that).
+
+inputs:
+  anchor-key:
+    description: Funded 0G private key, from a repository secret. Optional; without it changes are recorded and verified but not anchored.
+    required: false
+    default: ""
+  registry:
+    description: GermlineAnchor registry address. Defaults to the deployment shipped with Germline for the chain.
+    required: false
+    default: ""
+  upload:
+    description: Also publish the log to 0G Storage when anchoring. Refuses unredacted prompts unless allow-public-upload is true. Fails the run if the upload fails.
+    required: false
+    default: "false"
+  allow-public-upload:
+    description: Allow uploading a log that contains unredacted prompts and settings. 0G Storage is public.
+    required: false
+    default: "false"
+  log-branch:
+    description: Keep the log on this branch instead of the one being pushed, so a protected main needs no bot bypass. Empty means the same branch.
+    required: false
+    default: ""
+  commit:
+    description: Commit the updated log back.
+    required: false
+    default: "true"
+  rpc:
+    description: 0G Chain RPC URL.
+    required: false
+    default: https://evmrpc.0g.ai
+
+runs:
+  using: composite
+  steps:
+    - name: Install germline
+      shell: bash
+      env:
+        UPLOAD: ${{ inputs.upload }}
+      run: |
+        npm install --omit=dev --no-audit --no-fund --prefix "${{ github.action_path }}" >/dev/null
+        if [ "$UPLOAD" = "true" ]; then
+          npm install --no-save --no-audit --no-fund --legacy-peer-deps --prefix "${{ github.action_path }}" @0gfoundation/0g-storage-ts-sdk >/dev/null
+        fi
+
+    - name: Find the log
+      shell: bash
+      env:
+        LOG_BRANCH: ${{ inputs.log-branch }}
+        BRANCH: ${{ github.ref_name }}
+      run: |
+        G="${{ github.action_path }}/bin/germline.js"
+        if [ ! -f .germline/config.json ]; then
+          echo "::error::No .germline/config.json. Run 'npx germline init' in the repository first."
+          exit 1
+        fi
+        if [ -z "$LOG_BRANCH" ]; then
+          echo "GERMLINE_LOG=$(node "$G" path)" >> "$GITHUB_ENV"
+          echo "GERMLINE_LOG_DIR=$PWD" >> "$GITHUB_ENV"
+          echo "GERMLINE_PUSH_BRANCH=$BRANCH" >> "$GITHUB_ENV"
+          exit 0
+        fi
+        # The log lives on its own branch, checked out beside the code.
+        DIR="$RUNNER_TEMP/germline-log"
+        if git ls-remote --exit-code --heads origin "$LOG_BRANCH" >/dev/null 2>&1; then
+          git fetch -q origin "$LOG_BRANCH"
+          git worktree add -q --detach "$DIR" "origin/$LOG_BRANCH"
+        else
+          git worktree add -q --detach "$DIR"
+          git -C "$DIR" checkout -q --orphan "$LOG_BRANCH"
+          git -C "$DIR" rm -rqf --cached . >/dev/null
+          find "$DIR" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+        fi
+        echo "GERMLINE_LOG=$DIR/audit.jsonl" >> "$GITHUB_ENV"
+        echo "GERMLINE_LOG_DIR=$DIR" >> "$GITHUB_ENV"
+        echo "GERMLINE_PUSH_BRANCH=$LOG_BRANCH" >> "$GITHUB_ENV"
+
+    - name: Verify the existing log
+      shell: bash
+      run: node "${{ github.action_path }}/bin/germline.js" verify --log "$GERMLINE_LOG"
+
+    - name: Record changes and push them
+      shell: bash
+      env:
+        COMMIT: ${{ inputs.commit }}
+        EVENT: ${{ github.event_name }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        G="${{ github.action_path }}/bin/germline.js"
+        node "$G" track --log "$GERMLINE_LOG"
+        if [ "$COMMIT" != "true" ] || [ "$EVENT" != "push" ]; then exit 0; fi
+        cd "$GERMLINE_LOG_DIR"
+        git config user.name "germline[bot]"
+        git config user.email "germline-bot@users.noreply.github.com"
+        for attempt in 1 2 3 4; do
+          git add "$GERMLINE_LOG"
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -qm "audit: record AI config changes [skip ci]"
+          if git push -q origin "HEAD:$GERMLINE_PUSH_BRANCH"; then exit 0; fi
+          # Someone pushed in between. Take their branch, log included, and
+          # record again on top of it: tracking is per commit, so the result
+          # is the same entries, now linked to the right head.
+          echo "push rejected; rebuilding the record on the new head ($attempt)"
+          git fetch -q origin "$GERMLINE_PUSH_BRANCH"
+          git reset -q --hard "origin/$GERMLINE_PUSH_BRANCH"
+          (cd "$GITHUB_WORKSPACE" && node "$G" track --log "$GERMLINE_LOG")
+        done
+        echo "::error::Could not push the audit log after 4 attempts. If the branch is protected, set log-branch; see docs/AUDIT.md#branch-protection."
+        exit 1
+
+    - name: Anchor on 0G
+      shell: bash
+      env:
+        GERMLINE_ANCHOR_KEY: ${{ inputs.anchor-key }}
+        GERMLINE_REGISTRY: ${{ inputs.registry }}
+        ZEROG_RPC: ${{ inputs.rpc }}
+        UPLOAD: ${{ inputs.upload }}
+        PUBLIC: ${{ inputs.allow-public-upload }}
+        COMMIT: ${{ inputs.commit }}
+        EVENT: ${{ github.event_name }}
+      run: |
+        G="${{ github.action_path }}/bin/germline.js"
+        # Only anchor what is already pushed; see the note at the top.
+        if [ "$COMMIT" = "true" ] && [ "$EVENT" != "push" ]; then
+          echo "not a push; recorded and verified, not anchored"
+          exit 0
+        fi
+        args=(--if-key --log "$GERMLINE_LOG")
+        if [ "$UPLOAD" = "true" ]; then args+=(--upload); fi
+        if [ "$PUBLIC" = "true" ]; then args+=(--allow-public); fi
+        node "$G" anchor "${args[@]}"
+        if [ "$COMMIT" != "true" ] || [ "$EVENT" != "push" ]; then exit 0; fi
+        cd "$GERMLINE_LOG_DIR"
+        git add "$GERMLINE_LOG"
+        if git diff --cached --quiet; then exit 0; fi
+        git commit -qm "audit: anchor record [skip ci]"
+        # If this push loses a race the anchor is still valid: it covers
+        # entries already pushed. Only its receipt line is missing, which
+        # verify reports as a warning, and the next run anchors again.
+        git push -q origin "HEAD:$GERMLINE_PUSH_BRANCH" || echo "::warning::anchored, but the anchor receipt could not be pushed; the next run will anchor again"
