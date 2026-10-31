@@ -767,7 +767,15 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
     });
   }
 
-  return { file, entries, record, track, lastChange, recordSearch, recordReview, verify, anchor, verifyChain, verifyAnchors };
+  /// The most recent anchor entry, or null. Its `anchoredHead` is the value
+  /// a GermlineGuard expects an agent to claim (contracts/GermlineGuard.sol).
+  function lastAnchor() {
+    const all = entries();
+    for (let i = all.length - 1; i >= 0; i--) if (all[i].kind === "anchor") return all[i];
+    return null;
+  }
+
+  return { file, entries, record, track, lastChange, lastAnchor, recordSearch, recordReview, verify, anchor, verifyChain, verifyAnchors };
 }
 
 module.exports = {

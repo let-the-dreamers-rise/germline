@@ -13,6 +13,7 @@
 //   germline anchor [--upload] [--registry 0x..]
 //                                      pin the head on 0G Chain (needs DEPLOYER_KEY)
 //   germline id                        the log id to give auditors
+//   germline head                      the last anchored head, for GermlineGuard
 //   germline report [--out file.md]    the evidence pack, as Markdown
 //   germline log                       one line per entry
 //
@@ -83,6 +84,7 @@ const SPEC = {
   demo: { fast: BOOL },
   review: { ...COMMON, model: VALUE, limit: VALUE },
   id: COMMON,
+  head: COMMON,
   log: COMMON,
   path: COMMON,
 };
@@ -188,6 +190,7 @@ const HELP = `germline -- a tamper-evident audit trail for AI configuration chan
                   have a model on 0G Compute summarise each unreviewed change and flag its risk
                   for the approver (needs ZEROG_COMPUTE_KEY); recorded as a review entry
   germline id     the log id to keep somewhere other than the log
+  germline head   the last anchored head: what an agent claims to a GermlineGuard
   germline report [--format md|json|csv|cc81] [--out <file>] [--title <text>] [--chain [pins]]
   germline log
   germline --version
@@ -402,6 +405,15 @@ async function main() {
       const result = log.verify();
       if (!result.logId) throw new Error("the log is empty, so it has no id yet");
       console.log(result.logId);
+      return;
+    }
+
+    case "head": {
+      const result = log.verify();
+      if (!result.ok) throw new Error("the log does not verify; run germline verify");
+      const last = log.lastAnchor();
+      if (!last) throw new Error("the log has never been anchored, so a guard has nothing to check yet");
+      console.log(last.anchoredHead);
       return;
     }
 

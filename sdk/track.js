@@ -22,7 +22,7 @@ const VERSION = require("../package.json").version;
 // What a file holding AI behaviour tends to be called. Deliberately loose:
 // init shows what it found and the team edits the list, which is faster than
 // asking them to type paths from memory.
-const NAME_HINT = /(prompt|system[-_.]?message|instruction|persona|agent|assistant|llm|model[-_.]?config|ai[-_.]?config|guardrail|rubric|eval)/i;
+const NAME_HINT = /(prompt|system[-_.]?message|instruction|persona|agent|assistant|llm|model[-_.]?config|ai[-_.]?config|guardrail|rubric|eval|character|soul|mcp)/i;
 const EXT = /\.(json|ya?ml|md|txt|prompt|jinja2?|j2|hbs|mustache|toml)$/i;
 const SKIP_DIR = /(^|\/)(node_modules|\.git|\.germline|dist|build|out|coverage|vendor|\.next|\.venv|venv|__pycache__|artifacts|cache)(\/|$)/;
 const SKIP_FILE = /(^|\/)(package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|tsconfig.*\.json|\.eslintrc.*|CHANGELOG\.md|LICENSE.*|README.*)$/i;
