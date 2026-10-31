@@ -46,12 +46,18 @@ auditor out of band. That one value is what makes a rewritten copy fail.
 
 ```bash
 npx germline report --out evidence.md          # Markdown evidence pack
-npx germline report --format csv --out changes.csv   # for Vanta, Drata or a spreadsheet
+npx germline report --format cc81 --out cc81.csv     # SOC 2 CC8.1 sample rows for Vanta, Drata or DSALTA
 npx germline verify --log-id 0x… --chain --anchorer 0x… --strict
 ```
 
 Or drop `audit.jsonl` into the [browser verifier](web/verify.html). It runs
 the same checks locally, including against 0G Chain, and uploads nothing.
+A link of the form `verify.html?log=<https URL of audit.jsonl>&logId=…&anchorer=…&registry=…`
+verifies a published log in one click.
+
+This repository runs Germline on itself. `.github/workflows/germline.yml`
+records, reviews and anchors each change to the example prompts in
+`examples/`, and the log is on the `germline-audit` branch.
 
 The pack opens with the integrity result, lists each change with its author,
 reason, commit and test evidence, and maps the record to EU AI Act Art. 12
@@ -123,8 +129,11 @@ protection.
   `npm run deploy:anchor` deploys it.
 - **0G Storage** keeps an independent copy of each anchored log
   (`lib/storage.js`, via `@0gfoundation/0g-storage-ts-sdk`).
-- **0G Compute** isn't used by the audit trail. It's used only by the
-  separate search feature, described in [docs/SEARCH.md](docs/SEARCH.md).
+- **0G Compute** reviews each change for the approver (`germline review`, or
+  `review: true` in the action). A model on 0G Compute writes a two-sentence
+  summary and a risk level, which go into the log as a review entry bound to
+  the change by hash, with the model and request and response hashes. It
+  is advice, never an approval, and redacted values are never sent.
 
 ## Status
 

@@ -22,7 +22,7 @@
 
 const fs = require("fs");
 const { openAuditLog } = require("../sdk/audit");
-const { renderMarkdown, renderJson, renderCsv } = require("../sdk/report");
+const { renderMarkdown, renderJson, renderCsv, renderCc81 } = require("../sdk/report");
 const track = require("../sdk/track");
 
 const path = require("path");
@@ -81,6 +81,7 @@ const SPEC = {
   report: { ...COMMON, ...PINS, out: VALUE, title: VALUE, chain: BOOL, format: VALUE },
   init: { files: VALUE, system: VALUE, redact: BOOL, "no-workflow": BOOL },
   demo: { fast: BOOL },
+  review: { ...COMMON, model: VALUE, limit: VALUE },
   id: COMMON,
   log: COMMON,
   path: COMMON,
@@ -183,8 +184,11 @@ const HELP = `germline -- a tamper-evident audit trail for AI configuration chan
   germline verify [--log-id <id>] [--chain [--anchorer <0x..>] [--registry <0x..>]] [--strict]
                   --strict fails on any warning, including "never anchored"
   germline anchor [--upload [--allow-public]] [--registry <0x..>] [--if-key]
+  germline review [--model <id>]
+                  have a model on 0G Compute summarise each unreviewed change and flag its risk
+                  for the approver (needs ZEROG_COMPUTE_KEY); recorded as a review entry
   germline id     the log id to keep somewhere other than the log
-  germline report [--format md|json|csv] [--out <file>] [--title <text>] [--chain [pins]]
+  germline report [--format md|json|csv|cc81] [--out <file>] [--title <text>] [--chain [pins]]
   germline log
   germline --version
 
@@ -320,6 +324,17 @@ async function main() {
       return;
     }
 
+    case "review": {
+      const { reviewPending } = require("../sdk/review");
+      const limit = number(flags.limit, "--limit");
+      const { written, skipped } = await reviewPending(log, { model: flags.model, limit });
+      if (!written.length && !skipped.length) console.log("no unreviewed changes");
+      for (const e of written) console.log(plain("reviewed #" + e.reviews + "  risk " + e.risk + "  " + e.summary));
+      for (const s of skipped) console.log(plain("  not reviewed #" + s.seq + ": " + s.reason));
+      if (skipped.length && !written.length) process.exitCode = 1;
+      return;
+    }
+
     case "path": {
       console.log(file);
       return;
@@ -345,6 +360,10 @@ async function main() {
       if (flags.registry) pins(flags);
       const registry = await registryFor(flags, signer.provider);
       const entry = await log.anchor({ signer, upload: flags.upload === true, registry: registry || undefined });
+      if (!entry) {
+        console.log("nothing new since the last anchor; not anchoring again");
+        return;
+      }
       console.log("anchored " + entry.anchoredEntries + " entries, head " + entry.anchoredHead);
       console.log("  mode:    " + (entry.mode === "registry" ? "registry " + entry.registry + " #" + entry.index : "plain transaction (no registry on this chain; weaker, see docs/AUDIT.md)"));
       console.log("  log id:  " + entry.logId + "  anchorer " + entry.anchorer);
@@ -357,7 +376,7 @@ async function main() {
 
     case "report": {
       const format = flags.format || (flags.out && /\.json$/i.test(flags.out) ? "json" : flags.out && /\.csv$/i.test(flags.out) ? "csv" : "md");
-      if (!["md", "json", "csv"].includes(format)) throw new Error("--format must be md, json or csv");
+      if (!["md", "json", "csv", "cc81"].includes(format)) throw new Error("--format must be md, json, csv or cc81");
       const pinned = pins(flags);
       if ((flags.anchorer || flags.registry) && !flags.chain) {
         throw new Error("--anchorer and --registry are checked against the chain: add --chain");
@@ -371,7 +390,7 @@ async function main() {
         anchorChecks: chain ? chain.results : undefined,
         chainWarnings: chain ? chain.warnings : undefined,
       };
-      const text = format === "json" ? renderJson(log.entries(), options) : format === "csv" ? renderCsv(log.entries()) : renderMarkdown(log.entries(), options);
+      const text = format === "json" ? renderJson(log.entries(), options) : format === "csv" ? renderCsv(log.entries()) : format === "cc81" ? renderCc81(log.entries()) : renderMarkdown(log.entries(), options);
       if (flags.out) {
         fs.writeFileSync(flags.out, text, "utf8");
         console.log("wrote " + flags.out);
@@ -389,6 +408,7 @@ async function main() {
     case "log": {
       for (const e of log.entries()) {
         if (e.kind === "anchor") console.log("#" + e.seq + "  " + e.ts + "  ANCHOR  " + e.anchoredEntries + " entries  " + e.txHash);
+        else if (e.kind === "review") console.log(plain("#" + e.seq + "  " + e.ts + "  REVIEW of #" + e.reviews + "  " + e.risk + "  " + e.reviewer));
         else console.log(plain("#" + e.seq + "  " + e.ts + "  " + e.system + "  " + e.actor + "  " + (e.changes || []).map((c) => c.key).join(", ")));
       }
       return;

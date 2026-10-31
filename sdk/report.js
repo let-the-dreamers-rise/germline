@@ -265,6 +265,20 @@ function renderMarkdown(entries, options = {}) {
     }
   }
 
+  const reviews = valid.filter((e) => e.kind === "review");
+  if (reviews.length) {
+    lines.push("## Model reviews", "");
+    lines.push(
+      "Advice for the approver from a model on 0G Compute, recorded with hashes of the exact request and response. A review is not an approval.",
+      ""
+    );
+    lines.push("| Change | Reviewer | Risk | Summary | Concerns |", "|---|---|---|---|---|");
+    for (const r of reviews) {
+      lines.push("| " + [cell("#" + r.reviews), cell(r.reviewer), cell(r.risk), cell(r.summary), cell((r.concerns || []).join("; "))].join(" | ") + " |");
+    }
+    lines.push("");
+  }
+
   if (anchors.length) {
     lines.push("## Anchors", "");
     lines.push("| # | When | Covers | Chain | Transaction | Checked against chain | Log in 0G Storage |");
@@ -313,9 +327,15 @@ function renderMarkdown(entries, options = {}) {
 }
 
 function changeRows(entries) {
+  const reviewOf = new Map(entries.filter((e) => e && e.kind === "review").map((r) => [r.reviews, r]));
   return entries
     .filter((e) => e && e.kind === "change")
     .map((e) => ({
+      modelRisk: reviewOf.has(e.seq) ? reviewOf.get(e.seq).risk : null,
+      modelSummary: reviewOf.has(e.seq) ? reviewOf.get(e.seq).summary : null,
+      approvedAt: e.approval ? e.approval.approvedAt || null : null,
+      mergedBy: e.approval ? e.approval.mergedBy || null : null,
+      committedAt: e.committedAt || null,
       seq: e.seq,
       ts: e.ts,
       system: e.system,
@@ -395,4 +415,28 @@ function renderCsv(entries) {
   return [header.join(",")].concat(rows.map((r) => header.map((h) => csvCell(r[h])).join(","))).join("\n") + "\n";
 }
 
-module.exports = { renderMarkdown, renderJson, renderCsv, controls, escape };
+// One row per change, in the columns a SOC 2 change-management sample is
+// tested against (CC8.1: authorised, tested, documented), for GRC tools such
+// as Vanta, Drata or DSALTA that import evidence as a spreadsheet.
+function renderCc81(entries) {
+  const header = [
+    "Control", "Change ID", "System", "Change date", "Description", "Requested by", "Ticket", "Approved by", "Approval date",
+    "Implemented by", "Testing evidence", "Model review", "Commit", "Evidence status", "Record hash",
+  ];
+  const rows = changeRows(entries).map((r) => {
+    const tested = r.evalScore !== null ? "score " + r.evalScore + (r.evalBaseline !== null ? " vs baseline " + r.evalBaseline : "") + (r.evalSuite ? " (" + r.evalSuite + ")" : "") : null;
+    const documented = Boolean(r.ticket || (r.reason && !PLACEHOLDER.test(r.reason)));
+    const authorised = Boolean(r.approvedBy && r.approvedBy.length);
+    const missing = [!authorised && "approval", !tested && "testing evidence", !documented && "reason or ticket"].filter(Boolean);
+    return [
+      "CC8.1", "#" + r.seq, r.system, r.committedAt || r.ts,
+      (r.reason || "") + (r.changed.length ? " [" + r.changed.join(", ") + "]" : ""),
+      r.actor, r.ticket || (r.pullRequest ? "PR #" + r.pullRequest : null), r.approvedBy, r.approvedAt,
+      r.mergedBy || r.recordedBy, tested, r.modelRisk ? r.modelRisk + ": " + r.modelSummary : null, r.commit,
+      missing.length ? "Missing: " + missing.join(", ") : "Complete", r.hash,
+    ];
+  });
+  return [header.map(csvCell).join(",")].concat(rows.map((row) => row.map(csvCell).join(","))).join("\n") + "\n";
+}
+
+module.exports = { renderMarkdown, renderJson, renderCsv, renderCc81, controls, escape };

@@ -45,8 +45,9 @@ marked "Partial", never "compliant".
   gas each).
 - **0G Storage** holds the published copy of the log
   (`@0gfoundation/0g-storage-ts-sdk`).
-- **0G Compute** is used only by the separate config-search feature, not by
-  the audit trail.
+- **0G Compute** reviews each change for the approver: a model summary and
+  risk level, recorded as a review entry bound to the change by hash
+  (`germline review`).
 
 ## Fields
 

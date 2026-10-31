@@ -27,6 +27,14 @@ inputs:
     description: Allow uploading a log that contains unredacted prompts and settings. 0G Storage is public.
     required: false
     default: "false"
+  review:
+    description: Have a model on 0G Compute summarise each new change and flag its risk for the approver. Needs compute-key.
+    required: false
+    default: "false"
+  compute-key:
+    description: 0G Compute router API key (pc.0g.ai), from a repository secret. Used only when review is true.
+    required: false
+    default: ""
   log-branch:
     description: Keep the log on this branch instead of the one being pushed, so a protected main needs no bot bypass. Empty means the same branch.
     required: false
@@ -95,9 +103,14 @@ runs:
         COMMIT: ${{ inputs.commit }}
         EVENT: ${{ github.event_name }}
         GITHUB_TOKEN: ${{ github.token }}
+        REVIEW: ${{ inputs.review }}
+        ZEROG_COMPUTE_KEY: ${{ inputs.compute-key }}
       run: |
         G="${{ github.action_path }}/bin/germline.js"
         node "$G" track --log "$GERMLINE_LOG"
+        # Advice for the approver, never a gate: a failed review is reported
+        # and the next run tries the change again.
+        if [ "$REVIEW" = "true" ]; then node "$G" review --log "$GERMLINE_LOG" || echo "::warning::0G Compute review did not complete; it will be retried on the next run"; fi
         if [ "$COMMIT" != "true" ] || [ "$EVENT" != "push" ]; then exit 0; fi
         cd "$GERMLINE_LOG_DIR"
         git config user.name "germline[bot]"
