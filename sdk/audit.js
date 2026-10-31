@@ -267,6 +267,12 @@ function verifyEntries(entries) {
     if (expected !== null && entry.hash !== expected) {
       problems.push({ seq: index, reason: "contents do not match its hash (edited after writing)" });
     }
+    if (entry.kind === "review") {
+      const target = entries[entry.reviews];
+      if (!Number.isInteger(entry.reviews) || entry.reviews >= index || !target || target.hash !== entry.reviewsHash) {
+        problems.push({ seq: index, reason: "review does not point at an earlier entry with the hash it names" });
+      }
+    }
     if (entry.kind === "change" && entry.after !== undefined && entry.configRoot !== configRootOf(entry.after)) {
       problems.push({ seq: index, reason: "stored config does not match its recorded root" });
     }
@@ -537,6 +543,10 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
     const check = verify();
     if (!check.ok) throw new Error("refusing to anchor an audit log that does not verify");
     if (check.entries === 0) throw new Error("nothing to anchor: the audit log is empty");
+    // Nothing recorded since the last anchor: another transaction would pay
+    // gas to say the same thing again.
+    const all = entries();
+    if (all[all.length - 1].kind === "anchor") return null;
 
     let published = null;
     if (upload) {
@@ -736,7 +746,28 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
     return (await verifyChain(provider, options)).results;
   }
 
-  return { file, entries, record, track, lastChange, recordSearch, verify, anchor, verifyChain, verifyAnchors };
+  /// Record a review of an earlier change entry: who or what reviewed it,
+  /// and what they concluded. Bound to the reviewed entry by its hash, so a
+  /// review cannot be moved onto a different change.
+  function recordReview(input = {}) {
+    const all = entries();
+    const target = all[input.seq];
+    if (!target || target.kind !== "change") throw new TypeError("recordReview() needs the seq of a change entry");
+    if (!input.reviewer || typeof input.reviewer !== "string") throw new TypeError("recordReview() needs a reviewer");
+    return append({
+      kind: "review",
+      reviews: input.seq,
+      reviewsHash: target.hash,
+      system: target.system,
+      reviewer: input.reviewer,
+      summary: input.summary || null,
+      risk: input.risk || null,
+      concerns: Array.isArray(input.concerns) ? input.concerns : [],
+      evidence: input.evidence || null,
+    });
+  }
+
+  return { file, entries, record, track, lastChange, recordSearch, recordReview, verify, anchor, verifyChain, verifyAnchors };
 }
 
 module.exports = {

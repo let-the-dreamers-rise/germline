@@ -312,6 +312,62 @@ describe("audit trail", function () {
     });
   });
 
+  describe("model review on 0G Compute", function () {
+    const { reviewPending } = require("../sdk/review");
+    const { renderCc81 } = require("../sdk/report");
+
+    it("reviews each unreviewed change once, bound to it by hash", async function () {
+      const log = openAuditLog(tempLog());
+      log.record({ system: "s", actor: "a", before: BEFORE, after: AFTER, reason: "lower temperature" });
+      const seen = [];
+      const complete = async (messages) => {
+        seen.push(messages[1].content);
+        return { ok: true, model: "0gm-1.0-35b-a3b", text: 'Sure: {"summary":"Lowers temperature.","risk":"low","concerns":[]}' };
+      };
+      const first = await reviewPending(log, { complete });
+      expect(first.written).to.have.length(1);
+      expect(first.written[0]).to.include({ kind: "review", reviews: 0, risk: "low", reviewer: "0g-compute:0gm-1.0-35b-a3b" });
+      expect(first.written[0].evidence.requestHash).to.match(/^0x[0-9a-f]{64}$/);
+      expect(seen[0]).to.include("temperature: 0.7 -> 0.2");
+      expect((await reviewPending(log, { complete })).written).to.have.length(0);
+      expect(log.verify().ok).to.equal(true);
+      expect(renderMarkdown(log.entries())).to.include("## Model reviews");
+    });
+
+    it("never sends redacted values, and skips replies that are not the JSON asked for", async function () {
+      const log = openAuditLog(tempLog());
+      log.track("s", { secret: "do not leak" }, { actor: "a", redact: true });
+      log.track("s", { secret: "still secret" }, { actor: "a", redact: true });
+      let sent = "";
+      const result = await reviewPending(log, { complete: async (m) => ((sent += m[1].content), { ok: true, text: "no json here" }) });
+      expect(sent).to.not.include("secret\"").and.to.not.include("do not leak").and.to.not.include("still secret");
+      expect(result.written).to.have.length(0);
+      expect(result.skipped[0].reason).to.match(/JSON/);
+    });
+
+    it("catches a review moved onto a different change", function () {
+      const file = tempLog();
+      const log = openAuditLog(file);
+      log.record({ system: "s", actor: "a", after: BEFORE });
+      log.record({ system: "s", actor: "a", before: BEFORE, after: AFTER });
+      log.recordReview({ seq: 1, reviewer: "x", summary: "ok", risk: "low" });
+      const lines = fs.readFileSync(file, "utf8").trim().split("\n");
+      const forged = JSON.parse(lines[2]);
+      forged.reviews = 0;
+      lines[2] = JSON.stringify(forged);
+      fs.writeFileSync(file, lines.join("\n") + "\n");
+      expect(openAuditLog(file).verify().problems.map((p) => p.reason).join(" ")).to.match(/review does not point/);
+    });
+
+    it("exports SOC 2 CC8.1 evidence rows that say what is missing", function () {
+      const log = openAuditLog(tempLog());
+      log.record({ system: "s", actor: "a", after: AFTER, reason: "tune", ticket: "SUP-1", eval: { score: 0.9, baseline: 0.8 } });
+      const csv = renderCc81(log.entries()).trim().split("\n");
+      expect(csv[0]).to.match(/^"Control","Change ID"/);
+      expect(csv[1]).to.include('"CC8.1","#0"').and.to.include("score 0.9 vs baseline 0.8").and.to.include('"Missing: approval"');
+    });
+  });
+
   describe("cli", function () {
     const bin = path.join(__dirname, "..", "bin", "germline.js");
 

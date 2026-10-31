@@ -191,6 +191,12 @@ function verifyEntries(entries) {
     let expected = null;
     try { expected = hashOf(rest); } catch (err) { problems.push({ seq: i, reason: "cannot be hashed" }); }
     if (expected !== null && hash !== expected) problems.push({ seq: i, reason: "contents do not match its hash (edited after writing)" });
+    if (e.kind === "review") {
+      const target = entries[e.reviews];
+      if (!Number.isInteger(e.reviews) || e.reviews >= i || !target || target.hash !== e.reviewsHash) {
+        problems.push({ seq: i, reason: "review does not point at an earlier entry with the hash it names" });
+      }
+    }
     if (e.kind === "change" && e.after !== undefined && e.configRoot !== (e.after === null ? null : hashOf(e.after))) {
       problems.push({ seq: i, reason: "stored config does not match its recorded root" });
     }
@@ -244,6 +250,7 @@ function render(entries, chain) {
   out.append(panel);
 
   const changes = entries.filter((e) => e.kind === "change");
+  const reviewOf = new Map(entries.filter((e) => e.kind === "review").map((r) => [r.reviews, r]));
   const table = el("table", {}, el("tr", {}, ...["#", "When", "System", "Who", "What changed", "Why"].map((h) => el("th", {}, h))));
   const bad = new Set(check.problems.map((p) => p.seq));
   for (const e of changes) {
@@ -254,7 +261,7 @@ function render(entries, chain) {
       el("tr", {},
         el("td", bad.has(e.seq) ? { class: "bad" } : {}, e.seq),
         el("td", {}, e.ts), el("td", {}, e.system), el("td", {}, e.actor),
-        el("td", {}, what || "(baseline)"), el("td", {}, [e.reason, e.ticket].filter(Boolean).join(" · ") || "-"))
+        el("td", {}, what || "(baseline)"), el("td", {}, [e.reason, e.ticket, e.approval && e.approval.approvedBy && e.approval.approvedBy.length ? "approved by " + e.approval.approvedBy.join(", ") : null, reviewOf.has(e.seq) ? "model review: " + reviewOf.get(e.seq).risk + " risk" : null].filter(Boolean).join(" · ") || "-"))
     );
   }
   out.append(el("div", { class: "panel" }, el("strong", {}, changes.length + " change(s)"), el("div", { class: "table" }, table)));
@@ -292,7 +299,10 @@ async function checkChain() {
       } else if (!entry || entry.hash !== a.head) {
         failed++;
         notes.push("anchor #" + i + ": entry " + (covered - 1) + " is not the anchored head (rewritten)");
-      } else notes.push("anchor #" + i + ": entries 0–" + (covered - 1) + " match, block " + a.blockNumber);
+      } else {
+        const stored = a.storageRoot && a.storageRoot !== "0x" + "0".repeat(64) ? "; log copy in 0G Storage, root " + a.storageRoot : "";
+        notes.push("anchor #" + i + ": entries 0–" + (covered - 1) + " match, block " + a.blockNumber + stored);
+      }
     }
     const listed = current.filter((e) => e.kind === "anchor" && e.mode === "registry" && String(e.anchorer).toLowerCase() === anchorer.toLowerCase());
     for (const e of listed) {
@@ -328,6 +338,26 @@ drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.ad
 drop.addEventListener("dragleave", () => drop.classList.remove("over"));
 drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && load(e.dataTransfer.files[0]); });
 document.getElementById("chainBtn").addEventListener("click", checkChain);
+
+// One-click verification of a published log: verify.html?log=<url of audit.jsonl>
+// &logId=..&anchorer=..&registry=..[&rpc=..]. The log is fetched, then
+// checked here exactly as a dropped file would be.
+(function fromLink() {
+  const q = new URLSearchParams(location.search);
+  for (const k of ["logId", "anchorer", "registry", "rpc"]) if (q.get(k)) document.getElementById(k).value = q.get(k);
+  const url = q.get("log");
+  if (!url || !/^https:\/\//.test(url)) return;
+  out.replaceChildren(el("div", { class: "panel muted" }, "Fetching " + url + " …"));
+  fetch(url, { cache: "no-store" })
+    .then((r) => (r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status))))
+    .then((text) => {
+      current = readEntries(text);
+      document.getElementById("chainBtn").disabled = false;
+      render(current);
+      if (q.get("logId") && q.get("anchorer") && q.get("registry")) checkChain();
+    })
+    .catch((err) => out.replaceChildren(el("div", { class: "panel" }, verdict("fail", "Could not fetch the log", String(err.message || err)))));
+})();
 document.getElementById("logId").addEventListener("input", () => current && render(current));
 </script>
 </body>

@@ -17,4 +17,5 @@ genomes/
 .netlify/
 
 # Audit logs and the local storage cache written by the CLI and SDK.
-.germline/
+.germline/*
+!.germline/config.json
