@@ -86,6 +86,11 @@ This repository runs Germline on itself. `.github/workflows/germline.yml`
 records, reviews and anchors each change to the example prompts in
 `examples/`, and the log is on the `germline-audit` branch.
 
+It is anchored on 0G mainnet. Log ID
+`0x6c968bafaffe4ad49d730e56626ee47c951c96d0254f4ecb76137ed0bdce6891`, anchorer
+`0xA1918A4E578babad074ACf7DCefB152f8FDC8D2E`. A fresh install to its first
+anchor took 86 seconds.
+
 The pack opens with the integrity result, lists each change with its author,
 reason, commit and test evidence, and maps the record to EU AI Act Art. 12
 and 19, SOC 2 CC8.1 and ISO/IEC 42001. That mapping is built from what the
@@ -151,9 +156,11 @@ protection.
 
 ## How 0G is used
 
-- **0G Chain** holds the anchors. Contract: `contracts/GermlineAnchor.sol`.
-  It uses about 85k gas per anchor and is not yet deployed to mainnet.
-  `npm run deploy:anchor` deploys it.
+- **0G Chain** holds the anchors. `GermlineAnchor` is live on 0G mainnet at
+  [`0x18713A7ED60576C68B2CfE30D18839521a23cBcd`](https://chainscan.0g.ai/address/0x18713A7ED60576C68B2CfE30D18839521a23cBcd)
+  (`contracts/GermlineAnchor.sol`, about 85k gas per anchor). The CLI finds
+  it through `deployments/zerog-anchor.json`, so nobody needs to pass an
+  address.
 - **0G Storage** keeps an independent copy of each anchored log
   (`lib/storage.js`, via `@0gfoundation/0g-storage-ts-sdk`).
 - **0G Compute** reviews each change for the approver (`germline review`, or
@@ -175,11 +182,13 @@ transaction are in [docs/BOTCHAIN-TESTNET.md](docs/BOTCHAIN-TESTNET.md).
 | | |
 |---|---|
 | Hash chain, per-commit tracking, CLI, GitHub Action, evidence pack, browser verifier | done, tested |
-| Anchor registry contract | done, tested on a local chain; mainnet deployment needs a funded key |
-| Agent config timelock (`GermlineGuard`) | done, tested on a local chain against real logs; deploy per agent |
+| Anchor registry contract | **live on 0G mainnet**, [`0x18713A7E…cBcd`](https://chainscan.0g.ai/address/0x18713A7ED60576C68B2CfE30D18839521a23cBcd) |
+| This repository's own log, anchored and verified | **done**: [first anchor](https://chainscan.0g.ai/tx/0x149f24bbe5c5492e1977c937341450152c1c6f4f289f831355b3db1d044413f4), `verify --strict` passes; [evidence pack](docs/germline-evidence.md) |
+| Agent config timelock (`GermlineGuard`) | **live on 0G mainnet** for this repo's log, [`0x7eAAA03c…fA92`](https://chainscan.0g.ai/address/0x7eAAA03cdb80E638E59c5Cd0Cb92566aC7F9fA92); deploy one per agent |
 | 0G Storage upload | code path done; first mainnet upload needs a funded key |
-| Hosted anchoring (paid tier): GitHub OIDC or token per log, rate limit, receipt checked against the registry, public pins page | done, tested on a local chain; goes live once the registry is deployed and the service key is set |
-| npm package, release tag | pending: `npx github:…` and the `@v0.4.0` action ref work once this branch is merged and tagged |
+| Hosted anchoring (paid tier): GitHub OIDC or token per log, rate limit, receipt checked against the registry, public pins page | done, tested on a local chain; goes live once the service key is set in Vercel |
+| Release tag | **done**: [v0.4.0](https://github.com/let-the-dreamers-rise/germline/releases/tag/v0.4.0), so `uses: let-the-dreamers-rise/germline@v0.4.0` works |
+| npm package | pending: `npx github:let-the-dreamers-rise/germline` works today |
 
 ## Repository
 
