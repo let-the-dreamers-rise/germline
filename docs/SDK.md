@@ -1,5 +1,13 @@
 # SDK
 
+> **Legacy.** This page documents Germline's original product, an
+> evolutionary config search with on-chain lineage (`contracts/Germline.sol`,
+> live on 0G mainnet since Sep 3, 2026). It still ships in the package, as a
+> way to produce eval evidence for a change. Our own benchmark found random
+> sampling beats it on two of three landscapes, so it isn't the product. For
+> what Germline is now, see the [README](../README.md),
+> [AUDIT.md](AUDIT.md) and [AGENTS.md](AGENTS.md).
+
 Germline needs one thing from your product: a function that scores a
 configuration. Everything else is optional, including the chain.
 

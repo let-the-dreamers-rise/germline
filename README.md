@@ -1,23 +1,43 @@
 # Germline
 
-### A tamper-evident change log for your prompts and AI config. Anchored on 0G, checkable by anyone.
+### Change control for AI agents and AI config. Recorded, anchored on 0G, and enforceable on chain.
 
-Your AI feature changes every week: a new system prompt, a different model, a
-lower temperature. Your SOC 2 auditor, an enterprise customer's security
-review, or the EU AI Act will ask: *what was live on 14 March, who changed it,
-why, and what testing justified it?* Most teams answer with a Slack search.
+An AI agent is only as trustworthy as what it's told to do: its system
+prompt, model, tool list and limits. Those change every week, usually with no
+record anyone else can check. For an agent that moves money, a quiet change
+(`maxTradeUsd 100 → 100000`) is a rug pull that leaves no trace on chain. For
+a team shipping LLM features, it's the question their SOC 2 auditor, an
+enterprise security review or the EU AI Act will ask: *what was live on 14
+March, who changed it, why, and what testing justified it?*
 
-Germline records each change, one entry per commit, with the author, who
-approved the pull request (from GitHub's API), the commit message and ticket,
-the exact setting that moved, and any eval score.
-The log is hash-chained, so an edited, deleted or reordered entry fails
-verification, and its head is anchored on 0G Chain, so even whoever holds the
-file cannot rewrite it later. Your auditor checks it themselves, without
-trusting you or us.
+Germline answers both, in three layers:
+
+- **Record.** A GitHub Action logs one entry per commit that touches a
+  prompt or agent config. Each entry holds the author, who approved the pull
+  request (from GitHub's API), the commit message and ticket, the exact setting
+  that moved, and any eval score.
+- **Anchor.** The log is hash-chained, and its head is anchored on 0G Chain in
+  an ownerless, append-only registry, so even whoever holds the file can't
+  rewrite it. Anyone can check it without trusting you or us.
+- **Enforce.** `GermlineGuard` is a timelock on an agent's config: a vault
+  calls `guard.check(head)`, so every published change pauses the agent for a
+  set delay while depositors read it and decide whether to stay.
 
 ```bash
 npx github:let-the-dreamers-rise/germline demo     # one minute: record, verify, tamper, get caught
+npm run demo:agent                                 # in a clone: the agent timelock on a local chain
 ```
+
+## For on-chain AI agents
+
+`init` picks up ElizaOS characters, `SOUL.md` and `mcp.json` tool lists along
+with ordinary prompt and config files. `contracts/GermlineGuard.sol` and the
+`onlySettledConfig(head)` modifier gate any function on a settled config, and
+`germline head` gives the agent the head to claim.
+[docs/AGENTS.md](docs/AGENTS.md) has the setup and is precise about what the
+guard can and can't prove. `npm run demo:agent` plays the whole story on a
+local chain: an agent trades, its operator raises its limit, the guard pauses
+it, and the owner withdraws.
 
 ## Five-minute setup
 
@@ -111,20 +131,6 @@ test that proves each one, and the ones it does not catch.
 [docs/AUDIT.md](docs/AUDIT.md) covers the format, the CI setup, and branch
 protection.
 
-## For on-chain AI agents
-
-An agent that moves money is only as safe as its prompt, model and limits,
-and a quiet change to them leaves no trace. `init` also picks up ElizaOS
-characters, `SOUL.md` and `mcp.json` tool lists, so the agent's config
-history becomes public and impossible to rewrite. `contracts/GermlineGuard.sol`
-then puts a timelock on it: a vault that holds the agent's funds calls
-`guard.check(head)`, so every config change pauses the agent for a set delay
-while depositors read the change and decide whether to stay.
-[docs/AGENTS.md](docs/AGENTS.md) has the setup and is precise about what the
-guard can and can't prove.
-`npm run demo:agent` plays the whole story on a local chain: an agent trades,
-its operator raises its limit, the guard pauses it, and the owner withdraws.
-
 ## What it is not
 
 - Germline doesn't make you compliant. It produces evidence for one
@@ -171,7 +177,7 @@ sdk/github.js                pull-request approvals from the GitHub API
 contracts/GermlineAnchor.sol append-only anchor registry
 contracts/GermlineGuard.sol  timelock on an agent's anchored config
 web/verify.html              browser verifier, no upload, no third-party code
-docs/                        AUDIT (format, CI), AGENTS, BUSINESS, SEARCH (older lineage work)
+docs/                        AUDIT (format, CI), AGENTS, BUSINESS; SEARCH and SDK cover the legacy config search
 test/                        mocha (SDK, CLI) and hardhat (contracts) tests
 ```
 
