@@ -317,6 +317,7 @@ on:
 permissions:
   contents: write        # push the log to its branch
   pull-requests: read    # record who approved each change
+  id-token: write        # only used by hosted anchoring, to prove which repo this is
 
 # One recorder at a time, so two merges cannot fork the log.
 concurrency:
@@ -342,6 +343,9 @@ jobs:
           # Optional. Without it, changes are still recorded and verified;
           # they are just not anchored on chain until you add a key.
           anchor-key: \${{ secrets.GERMLINE_ANCHOR_KEY }}
+          # Or let Germline anchor for you (no 0G key, no gas, no secret):
+          # set the repository variable GERMLINE_HOSTED_URL. See docs/HOSTED.md.
+          hosted-url: \${{ vars.GERMLINE_HOSTED_URL }}
 `;
 }
 

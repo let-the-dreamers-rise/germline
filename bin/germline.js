@@ -78,7 +78,7 @@ const SPEC = {
   record: { ...COMMON, ...EVAL, system: VALUE, actor: VALUE, before: VALUE, after: VALUE, reason: VALUE, ticket: VALUE, redact: BOOL },
   track: { ...COMMON, ...EVAL, actor: VALUE, reason: VALUE, ticket: VALUE },
   verify: { ...COMMON, ...PINS, chain: BOOL, strict: BOOL },
-  anchor: { ...COMMON, registry: VALUE, upload: BOOL, "if-key": BOOL, "allow-public": BOOL },
+  anchor: { ...COMMON, registry: VALUE, upload: BOOL, "if-key": BOOL, "allow-public": BOOL, hosted: BOOL },
   report: { ...COMMON, ...PINS, out: VALUE, title: VALUE, chain: BOOL, format: VALUE },
   init: { files: VALUE, system: VALUE, redact: BOOL, "no-workflow": BOOL },
   demo: { fast: BOOL },
@@ -165,6 +165,19 @@ function anchorKey() {
   return process.env.GERMLINE_ANCHOR_KEY || process.env.DEPLOYER_KEY || null;
 }
 
+// A short-lived GitHub Actions OIDC token naming this repository, for the
+// hosted service. Needs `permissions: id-token: write` in the workflow.
+async function githubOidcToken(audience) {
+  const url = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+  url.searchParams.set("audience", audience);
+  const response = await fetch(url, { headers: { authorization: "Bearer " + process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN } });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body || typeof body.value !== "string") {
+    throw new Error("could not get a GitHub OIDC token; add `id-token: write` to the workflow's permissions");
+  }
+  return body.value;
+}
+
 function signerFromEnv() {
   const key = anchorKey();
   if (!key) throw new Error("set GERMLINE_ANCHOR_KEY (or DEPLOYER_KEY) to a funded 0G key to anchor; an anchor is an on-chain transaction");
@@ -185,7 +198,9 @@ const HELP = `germline -- a tamper-evident audit trail for AI configuration chan
                   [--score <n>] [--baseline <n>] [--suite <name>] [--eval-file <f>] [--redact]
   germline verify [--log-id <id>] [--chain [--anchorer <0x..>] [--registry <0x..>]] [--strict]
                   --strict fails on any warning, including "never anchored"
-  germline anchor [--upload [--allow-public]] [--registry <0x..>] [--if-key]
+  germline anchor [--upload [--allow-public]] [--registry <0x..>] [--if-key] [--hosted]
+                  --hosted: Germline anchors for you (GERMLINE_HOSTED_URL; in GitHub Actions no token
+                  is needed with id-token: write, elsewhere set GERMLINE_HOSTED_TOKEN)
   germline review [--model <id>]
                   have a model on 0G Compute summarise each unreviewed change and flag its risk
                   for the approver (needs ZEROG_COMPUTE_KEY); recorded as a review entry
@@ -351,8 +366,34 @@ async function main() {
     }
 
     case "anchor": {
-      if (flags["if-key"] && !anchorKey()) {
+      // Hosted: Germline's service anchors from its own key. Chosen with
+      // --hosted, or when a hosted token is set and no anchor key is.
+      // In GitHub Actions with `id-token: write`, no token is needed at all:
+      // the run proves which repository it is with a GitHub OIDC token.
+      const hostedUrl = process.env.GERMLINE_HOSTED_URL || null;
+      const oidc = !!(process.env.ACTIONS_ID_TOKEN_REQUEST_URL && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN);
+      let hostedToken = process.env.GERMLINE_HOSTED_TOKEN || null;
+      const useHosted = flags.hosted === true || (!anchorKey() && !!hostedUrl && (!!hostedToken || oidc));
+      if (flags["if-key"] && !anchorKey() && !useHosted) {
         console.log("no anchor key set; skipping the on-chain anchor (the log is still recorded and verified)");
+        return;
+      }
+      if (useHosted) {
+        if (flags.upload) throw new Error("--upload is not available with hosted anchoring yet; the log stays with you");
+        if (flags.registry) throw new Error("--registry is chosen by the hosted service; drop it, or anchor with your own key");
+        if (!hostedToken && oidc) hostedToken = await githubOidcToken(process.env.GERMLINE_HOSTED_AUDIENCE || "germline-hosted");
+        const { JsonRpcProvider } = require("ethers");
+        const entry = await log.anchor({
+          hosted: { url: hostedUrl, token: hostedToken, provider: new JsonRpcProvider(DEFAULT_RPC) },
+        });
+        if (!entry) {
+          console.log("nothing new since the last anchor; not anchoring again");
+          return;
+        }
+        console.log("anchored " + entry.anchoredEntries + " entries, head " + entry.anchoredHead + " (hosted by " + entry.hosted + ")");
+        console.log("  mode:    registry " + entry.registry + " #" + entry.index);
+        console.log("  log id:  " + entry.logId + "  anchorer " + entry.anchorer);
+        console.log("  tx:      " + entry.txHash + "  (chain " + entry.chainId + ", block " + entry.block + ")");
         return;
       }
       // 0G Storage is public and permanent. Refuse to publish prompts and

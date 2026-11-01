@@ -15,6 +15,14 @@ inputs:
     description: Funded 0G private key, from a repository secret. Optional; without it changes are recorded and verified but not anchored.
     required: false
     default: ""
+  hosted-token:
+    description: "Hosted-anchoring token, from a repository secret. Usually not needed. With hosted-url set and `id-token: write` in the workflow's permissions, the run proves its repository to the service with GitHub OIDC."
+    required: false
+    default: ""
+  hosted-url:
+    description: Base URL of Germline's hosted-anchoring service. When set and anchor-key is empty, Germline anchors from its own key and pays the gas. See docs/HOSTED.md.
+    required: false
+    default: ""
   registry:
     description: GermlineAnchor registry address. Defaults to the deployment shipped with Germline for the chain.
     required: false
@@ -139,6 +147,8 @@ runs:
       shell: bash
       env:
         GERMLINE_ANCHOR_KEY: ${{ inputs.anchor-key }}
+        GERMLINE_HOSTED_TOKEN: ${{ inputs.hosted-token }}
+        GERMLINE_HOSTED_URL: ${{ inputs.hosted-url }}
         GERMLINE_REGISTRY: ${{ inputs.registry }}
         ZEROG_RPC: ${{ inputs.rpc }}
         UPLOAD: ${{ inputs.upload }}
