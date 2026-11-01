@@ -89,6 +89,13 @@ function hasReason(e) {
   return Boolean(e.ticket || (e.reason && !PLACEHOLDER.test(e.reason)));
 }
 
+// When a change happened. A change backfilled from git history was recorded
+// long after its commit, so the commit date is the one a reader wants; `ts`
+// stays the recording time in the log itself and in the JSON export.
+function whenOf(e) {
+  return typeof e.committedAt === "string" && e.committedAt ? e.committedAt : e.ts;
+}
+
 function hasApproval(e) {
   return Boolean(e.approval && Array.isArray(e.approval.approvedBy) && e.approval.approvedBy.length);
 }
@@ -223,14 +230,17 @@ function renderMarkdown(entries, options = {}) {
   lines.push("| Changes recorded | " + changes.length + " |");
   lines.push("| Distinct authors | " + new Set(changes.map((e) => e.actor)).size + " |");
   lines.push("| With a reason or ticket | " + changes.filter(hasReason).length + " |");
+  // Thirteen changes that all say "Updated prompts" have a reason on paper
+  // only. The count of distinct reasons makes boilerplate visible.
+  lines.push("| Distinct reasons given | " + new Set(changes.filter(hasReason).map((e) => [e.reason, e.ticket].filter(Boolean).join(" · "))).size + " |");
   lines.push("| With a recorded approval | " + changes.filter(hasApproval).length + " |");
   lines.push("| With test evidence | " + changes.filter((e) => e.eval).length + " |");
-  lines.push("| First change | " + cell(changes[0] && changes[0].ts) + " |");
-  lines.push("| Latest change | " + cell(changes.length ? changes[changes.length - 1].ts : null) + " |");
+  lines.push("| First change | " + cell(changes[0] && whenOf(changes[0])) + " |");
+  lines.push("| Latest change | " + cell(changes.length ? whenOf(changes[changes.length - 1]) : null) + " |");
   lines.push("");
 
   lines.push("## Changes", "");
-  lines.push("| # | When | System | Author | What changed | Why, approval | Commit | Evidence | Config root |");
+  lines.push("| # | When (commit date, else recorded) | System | Author | What changed | Why, approval | Commit | Evidence | Config root |");
   lines.push("|---|---|---|---|---|---|---|---|---|");
   const details = [];
   for (const e of changes) {
@@ -242,7 +252,7 @@ function renderMarkdown(entries, options = {}) {
       "| " +
         [
           cell(e.seq),
-          cell(e.ts),
+          cell(whenOf(e)),
           cell(e.system),
           cell(e.actor) + (e.recordedBy && e.recordedBy !== e.actor ? " (recorded by " + cell(e.recordedBy) + ")" : ""),
           cell(what || "(no field changed)"),

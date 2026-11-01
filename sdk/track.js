@@ -56,12 +56,21 @@ function listFiles(cwd) {
   return out;
 }
 
+// Prompt templates are often named for what they do (summarizer.j2,
+// analyze_button.j2) rather than for being prompts. A template file counts
+// when a file in the same directory already matched by name, so a folder of
+// prompts is picked up whole while a web app's HTML templates are not.
+const TEMPLATE_EXT = /\.(prompt|jinja2?|j2|hbs|mustache)$/i;
+
 /// Files that look like they define an AI system's behaviour.
 function discover(cwd = process.cwd()) {
-  return listFiles(cwd)
-    .filter((f) => !SKIP_DIR.test(f) && !SKIP_FILE.test(f) && EXT.test(f) && NAME_HINT.test(f))
-    .sort()
-    .slice(0, 50);
+  const candidates = listFiles(cwd).filter((f) => !SKIP_DIR.test(f) && !SKIP_FILE.test(f) && EXT.test(f));
+  const named = candidates.filter((f) => NAME_HINT.test(f));
+  const promptDirs = new Set(named.map((f) => path.posix.dirname(f)));
+  const siblings = candidates.filter(
+    (f) => !NAME_HINT.test(f) && TEMPLATE_EXT.test(f) && (/\.prompt$/i.test(f) || promptDirs.has(path.posix.dirname(f)))
+  );
+  return named.concat(siblings).sort().slice(0, 50);
 }
 
 /// The tracked state of a system: each file's content, keyed by path. JSON is

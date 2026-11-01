@@ -45,6 +45,12 @@ wouldn't record it. The record shows only what went through the tracked
 path. Binding the published config to what actually ran needs attested
 inference (see "the honest gap" below).
 
+**See it on the real record.** [CASE-STUDY-GROK.md](CASE-STUDY-GROK.md) runs
+Germline over xAI's public prompt repository: 14 changes, one CI author, 13
+identical commit messages, and no recorded approvals. It includes the line
+added on 6 July 2025 and removed on 8 July, the evening of the antisemitic
+posts.
+
 ## Incidents that are not config changes
 
 ### AIXBT, 18 March 2025: dashboard access, 55.5 ETH

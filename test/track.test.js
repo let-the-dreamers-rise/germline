@@ -55,6 +55,24 @@ describe("init and track", function () {
     expect(discover(dir)).to.deep.equal(["SOUL.md", "characters/trader.character.json", "mcp.json"]);
   });
 
+  it("picks up prompt templates named for what they do, next to files that matched by name", function () {
+    // Shaped like a real public prompt repository: most templates say
+    // "prompt" in their name, some (summarizer.j2, analyze_button.j2) don't.
+    const dir = repo({
+      "prompts/ask_system_prompt.j2": "You are a bot.",
+      "prompts/analyze_button.j2": "Analyze this post.",
+      "prompts/summarizer.jinja": "Summarize.",
+      "web/templates/page.hbs": "<html></html>",
+      "standalone/review.prompt": "Review this.",
+    });
+    expect(discover(dir)).to.deep.equal([
+      "prompts/analyze_button.j2",
+      "prompts/ask_system_prompt.j2",
+      "prompts/summarizer.jinja",
+      "standalone/review.prompt",
+    ]);
+  });
+
   it("snapshots JSON as values, text as text, and missing files as null", function () {
     const dir = repo(FILES);
     expect(snapshot(["config/agent.json", "prompts/system.md", "gone.md"], dir)).to.deep.equal({
@@ -209,6 +227,19 @@ describe("init and track", function () {
     const log = openAuditLog(path.join(repo({}), "a.jsonl"));
     log.record({ system: "s", actor: "a", after: { t: 1 }, reason: "x", commit: sha, approval: out[sha] });
     expect(renderMarkdown(log.entries())).to.include("approved by rev1 in PR \\#12");
+  });
+
+  it("dates backfilled changes by their commit, and shows boilerplate reasons for what they are", function () {
+    const log = openAuditLog(path.join(repo({}), "a.jsonl"), { clock: () => "2026-11-01T00:00:00.000Z" });
+    log.record({ system: "s", actor: "ci", after: { t: 1 }, reason: "Updated prompts", committedAt: "2025-07-06T23:01:49+00:00" });
+    log.record({ system: "s", actor: "ci", before: { t: 1 }, after: { t: 2 }, reason: "Updated prompts", committedAt: "2025-07-08T22:28:23+00:00" });
+    log.record({ system: "s", actor: "ci", before: { t: 2 }, after: { t: 3 }, reason: "Updated prompts" });
+    const md = renderMarkdown(log.entries());
+    expect(md).to.include("| First change | 2025-07-06T23:01:49+00:00 |");
+    expect(md).to.include("| Latest change | 2026-11-01T00:00:00.000Z |");
+    expect(md).to.include("| With a reason or ticket | 3 |");
+    expect(md).to.include("| Distinct reasons given | 1 |");
+    expect(md).to.include("| 1 | 2025-07-08T22:28:23+00:00 |");
   });
 
   it("finds tickets in commit messages", function () {
