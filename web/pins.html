@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Germline published pins</title>
+<meta name="description" content="The log id and anchorer an auditor should hold for a log anchored by Germline's hosted service." />
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --border: #e2e2dc; --text: #17181a; --dim: #5d6168; --faint: #8b9098;
+    --bad: #b3392b; --bad-bg: #fbeae7; --accent: #b9791b;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #0b0c0e; --panel: #131519; --border: #262a32; --text: #e9ebef; --dim: #a0a6b0; --faint: #687080; --bad: #ec7a66; --bad-bg: #2a1512; --accent: #e2a63c; }
+  }
+  :root[data-theme="dark"] { --bg: #0b0c0e; --panel: #131519; --border: #262a32; --text: #e9ebef; --dim: #a0a6b0; --faint: #687080; --bad: #ec7a66; --bad-bg: #2a1512; --accent: #e2a63c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 var(--sans); }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  .lede { color: var(--dim); margin: 0 0 24px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  dl { margin: 0; display: grid; grid-template-columns: 140px 1fr; gap: 10px 16px; }
+  @media (max-width: 560px) { dl { grid-template-columns: 1fr; } dt { margin-top: 8px; } }
+  dt { color: var(--faint); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; padding-top: 2px; }
+  dd { margin: 0; font-family: var(--mono); font-size: 13px; word-break: break-all; }
+  a { color: var(--accent); }
+  .error { background: var(--bad-bg); color: var(--bad); border-radius: 8px; padding: 14px 16px; }
+  .cta { display: inline-block; margin-top: 18px; font-weight: 600; }
+  p.note { color: var(--dim); font-size: 14px; margin-top: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Published pins</h1>
+  <p class="lede">Germline anchors this log from its own key, so the company being audited cannot re-anchor a rewritten copy. Keep these values. A copy of the log that doesn't match them fails verification.</p>
+  <div id="out" class="panel">Loading…</div>
+  <p class="note">These pins come from Germline's hosted service, not from the log. Check them against the registry on <a href="https://chainscan.0g.ai" rel="noopener">0G Chain</a> yourself.</p>
+</main>
+<script>
+(function () {
+  var out = document.getElementById("out");
+  var logId = new URLSearchParams(location.search).get("logId") || "";
+  function text(tag, value) { var el = document.createElement(tag); el.textContent = value; return el; }
+  function fail(message) { out.className = "error"; out.textContent = message; }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(logId)) return fail("Add ?logId=0x… to the address. The customer's `germline id` prints it.");
+  fetch("api/pins?logId=" + encodeURIComponent(logId), { headers: { accept: "application/json" } })
+    .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+    .then(function (r) {
+      if (!r.ok) return fail((r.body && r.body.error) || "No published pins for that log id.");
+      var p = r.body;
+      var dl = document.createElement("dl");
+      [["Company", p.name], ["Log id", p.logId], ["Anchorer", p.anchorer], ["Registry", p.registry], ["Chain", String(p.chainId)], ["Hosted since", p.since || "not recorded"]].forEach(function (row) {
+        dl.appendChild(text("dt", row[0]));
+        dl.appendChild(text("dd", row[1]));
+      });
+      out.textContent = "";
+      out.appendChild(dl);
+      var a = text("a", "Verify a copy of this log →");
+      a.className = "cta";
+      a.href = "verify.html?" + new URLSearchParams({ logId: p.logId, anchorer: p.anchorer, registry: p.registry }).toString();
+      out.appendChild(a);
+    })
+    .catch(function () { fail("Could not reach the pins service. Try again."); });
+})();
+</script>
+</body>
+</html>

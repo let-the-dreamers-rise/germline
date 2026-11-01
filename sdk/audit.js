@@ -403,7 +403,84 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
   /// append-only registry under this log's id. Without it, the head goes into
   /// a zero-value transaction to the signer's own address: no contract
   /// needed, but weaker, as the header of this file explains.
-  async function anchor({ signer, upload = false, storage, registry } = {}) {
+  /// Hosted anchoring: Germline's service anchors the head from its own key,
+  /// so the customer never holds the anchoring key. Only the log id, entry
+  /// count and head are sent. `hosted` = { url, token, fetch?, provider? }.
+  /// With a provider, the receipt is checked against the registry before it
+  /// is written into the log, so a wrong answer from the service is caught
+  /// here and not only at audit time.
+  async function anchorHosted({ url, token, fetch: fetchFn, provider } = {}) {
+    if (!url || !/^https:\/\/[^\s/]+/.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/.test(url)) {
+      throw new Error("hosted anchoring needs an https URL (GERMLINE_HOSTED_URL)");
+    }
+    if (!token) throw new Error("hosted anchoring needs a token (GERMLINE_HOSTED_TOKEN)");
+    const check = verify();
+    if (!check.ok) throw new Error("refusing to anchor an audit log that does not verify");
+    if (check.entries === 0) throw new Error("nothing to anchor: the audit log is empty");
+    const all = entries();
+    if (all[all.length - 1].kind === "anchor") return null;
+
+    const doFetch = fetchFn || globalThis.fetch;
+    if (typeof doFetch !== "function") throw new Error("no fetch available; use Node 18 or later");
+    const endpoint = url.replace(/\/+$/, "") + "/api/anchor";
+    const response = await doFetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer " + token },
+      body: JSON.stringify({ logId: check.logId, entries: check.entries, head: check.head, storageRoot: null }),
+    });
+    let body = null;
+    try {
+      body = await response.json();
+    } catch (ignored) {}
+    if (!response.ok) {
+      const reason = body && typeof body.error === "string" ? body.error.slice(0, 200) : "HTTP " + response.status;
+      const error = new Error("hosted anchoring refused: " + reason);
+      error.status = response.status;
+      if (body && Number.isFinite(body.retryAfter)) error.retryAfter = body.retryAfter;
+      throw error;
+    }
+    const hex = (v, n) => typeof v === "string" && new RegExp("^0x[0-9a-fA-F]{" + n + "}$").test(v);
+    if (
+      !body ||
+      !hex(body.txHash, 64) ||
+      !hex(body.anchorer, 40) ||
+      !hex(body.registry, 40) ||
+      !Number.isSafeInteger(body.index) ||
+      !Number.isSafeInteger(body.chainId) ||
+      !Number.isSafeInteger(body.block) ||
+      String(body.logId).toLowerCase() !== check.logId.toLowerCase() ||
+      String(body.head).toLowerCase() !== check.head.toLowerCase() ||
+      body.entries !== check.entries
+    ) {
+      throw new Error("hosted anchoring returned a receipt that does not match this log; nothing was recorded");
+    }
+    if (provider) {
+      const { Contract } = require("ethers");
+      const contract = new Contract(body.registry, REGISTRY_ABI, provider);
+      const [onChain] = await contract.anchorsOf(check.logId, body.anchorer, body.index, 1);
+      if (!onChain || Number(onChain.covered) !== check.entries || String(onChain.head).toLowerCase() !== check.head.toLowerCase()) {
+        throw new Error("hosted anchoring said it anchored, but the registry does not hold that anchor; nothing was recorded");
+      }
+    }
+    return append({
+      kind: "anchor",
+      mode: "registry",
+      logId: check.logId,
+      anchoredHead: check.head,
+      anchoredEntries: check.entries,
+      chainId: body.chainId,
+      registry: body.registry,
+      index: body.index,
+      txHash: body.txHash,
+      block: body.block,
+      anchorer: body.anchorer,
+      hosted: new URL(endpoint).origin,
+      storage: null,
+    });
+  }
+
+  async function anchor({ signer, upload = false, storage, registry, hosted } = {}) {
+    if (hosted) return anchorHosted(hosted);
     if (!signer) throw new TypeError("anchor() needs an ethers signer connected to 0G Chain");
     const check = verify();
     if (!check.ok) throw new Error("refusing to anchor an audit log that does not verify");

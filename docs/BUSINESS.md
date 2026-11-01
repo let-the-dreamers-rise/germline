@@ -62,6 +62,10 @@ These are proposals, not measured willingness to pay.
 | Team | $199 a month per repository group | hosted anchoring (we hold the key and pay gas), log storage on 0G, a hosted verifier page with your pins published at the start of the audit period, CSV export into Vanta and Drata |
 | Audit pack | $1,500 one-off | evidence pack prepared for one audit window, with an auditor walk-through |
 
+The hosted tier's core is built (`web/api/`, `docs/HOSTED.md`): per-log
+tokens, our key anchoring, rate limits, and a public pins page. Billing and a
+customer database are not built; the first customers are invoiced by hand.
+
 The hosted tier sells two things a team can't easily do alone. First, a third
 party holding the anchor key and publishing the pins early, which closes the
 "auditee builds a fake log the week before" gap in SECURITY.md. Second, not

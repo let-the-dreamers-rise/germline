@@ -59,6 +59,13 @@ To anchor on 0G, add a funded 0G key as the repository secret
 add it, the log is still recorded and verified on every push. It just isn't
 pinned on chain yet, and the evidence pack says so.
 
+Or skip the key entirely: with **hosted anchoring** Germline anchors from its
+own key and pays the gas. On GitHub Actions you set one repository variable
+and store no secret, because the run proves which repository it is with
+GitHub OIDC. Your auditor pins Germline's address, which you can't sign for. Only the log
+id, entry count and head hash leave your repository. See
+[docs/HOSTED.md](docs/HOSTED.md).
+
 Write down the log ID that `npx germline id` prints, and give it to your
 auditor out of band. That one value is what makes a rewritten copy fail.
 
@@ -171,6 +178,7 @@ transaction are in [docs/BOTCHAIN-TESTNET.md](docs/BOTCHAIN-TESTNET.md).
 | Anchor registry contract | done, tested on a local chain; mainnet deployment needs a funded key |
 | Agent config timelock (`GermlineGuard`) | done, tested on a local chain against real logs; deploy per agent |
 | 0G Storage upload | code path done; first mainnet upload needs a funded key |
+| Hosted anchoring (paid tier): GitHub OIDC or token per log, rate limit, receipt checked against the registry, public pins page | done, tested on a local chain; goes live once the registry is deployed and the service key is set |
 | npm package, release tag | pending: `npx github:…` and the `@v0.4.0` action ref work once this branch is merged and tagged |
 
 ## Repository
@@ -182,6 +190,7 @@ sdk/audit.js                 hash chain, diff, anchoring, chain verification
 sdk/track.js                 per-commit tracking from git
 sdk/report.js                evidence pack (Markdown, JSON, CSV)
 sdk/github.js                pull-request approvals from the GitHub API
+web/api/                     hosted anchoring service (Vercel functions)
 contracts/GermlineAnchor.sol append-only anchor registry
 contracts/GermlineGuard.sol  timelock on an agent's anchored config
 web/verify.html              browser verifier, no upload, no third-party code

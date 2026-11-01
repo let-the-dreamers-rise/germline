@@ -1,0 +1,8 @@
+{
+  "name": "germline-web",
+  "private": true,
+  "description": "Static site plus the hosted-anchoring API (api/).",
+  "dependencies": {
+    "ethers": "6.17.0"
+  }
+}
