@@ -1,0 +1,9 @@
+{
+  "network": "zerog",
+  "chainId": 16661,
+  "address": "0x18713A7ED60576C68B2CfE30D18839521a23cBcd",
+  "deployTx": "0xf464c39a673d44d113c2db580438db43aee1682ef71a32f22c413c76a6ee7b6a",
+  "block": 48959196,
+  "deployer": "0xA1918A4E578babad074ACf7DCefB152f8FDC8D2E",
+  "deployedAt": "2026-11-01T13:26:53.717Z"
+}

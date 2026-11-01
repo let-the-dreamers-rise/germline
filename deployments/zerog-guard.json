@@ -1,0 +1,11 @@
+﻿{
+    "network":  "zerog",
+    "chainId":  16661,
+    "address":  "0x7eAAA03cdb80E638E59c5Cd0Cb92566aC7F9fA92",
+    "deployTx":  "0x7cd3d292a18b9598cc1cf6637c5bd26311e50590f9ae11316ced14f0a5ab7a13",
+    "registry":  "0x18713A7ED60576C68B2CfE30D18839521a23cBcd",
+    "logId":  "0x6c968bafaffe4ad49d730e56626ee47c951c96d0254f4ecb76137ed0bdce6891",
+    "anchorer":  "0xA1918A4E578babad074ACf7DCefB152f8FDC8D2E",
+    "delay":  3600,
+    "deployedAt":  "2026-11-01T13:32:28.5075539Z"
+}
