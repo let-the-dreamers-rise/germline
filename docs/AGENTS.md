@@ -107,3 +107,7 @@ Be precise about this with your users.
 The guard still changes the operator's incentives today. A silent change now
 means publishing a false head, which is a public, permanent, attributable lie,
 rather than an invisible edit.
+
+## Further reading
+
+[INCIDENTS.md](INCIDENTS.md) goes through public incidents, including two unauthorized Grok system-prompt changes in 2025, and says which ones Germline addresses and which it does not. It also gives measured gas costs.

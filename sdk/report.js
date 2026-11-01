@@ -22,6 +22,8 @@ const { verifyEntries } = require("./audit");
 const EXPLORERS = {
   16661: "https://chainscan.0g.ai/tx/",
   16601: "https://chainscan-galileo.0g.ai/tx/",
+  8453: "https://basescan.org/tx/",
+  84532: "https://sepolia.basescan.org/tx/",
 };
 
 const HASH = /^0x[0-9a-fA-F]{64}$/;
