@@ -1,150 +1,279 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="no-js">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Germline</title>
-<meta name="description" content="A timelock for what AI agents are told to do. Every change to an agent's prompt, model and limits, recorded, anchored on 0G, and enforceable on chain." />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='none' stroke='%23e2a63c' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='4' r='2.5' fill='%23e2a63c'/%3E%3Ccircle cx='27' cy='22' r='2.5' fill='%23e2a63c'/%3E%3Ccircle cx='5' cy='22' r='2.5' fill='%23e2a63c'/%3E%3Cpath d='M16 10V6M20.7 19l4.7 2.7M11.3 19l-4.7 2.7' stroke='%23e2a63c' stroke-width='1.6'/%3E%3C/svg%3E" />
-<style>
-  :root {
-    --bg: #f7f7f5; --panel: #ffffff; --border: #e2e2dc; --text: #17181a; --dim: #5d6168; --faint: #8b9098;
-    --accent: #5b45c2; --accent-bg: #efecfb; --warm: #9a5b00; --warm-bg: #fdf3dd; --good: #1f7a4a; --bad: #b3392b;
-    --code-bg: #14161b; --code-text: #e9ebef;
-    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
-    --sans: -apple-system, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #0b0c0e; --panel: #131519; --border: #262a32; --text: #e9ebef; --dim: #a0a6b0; --faint: #687080;
-      --accent: #b9a8ff; --accent-bg: #1d1934; --warm: #e2b24c; --warm-bg: #2a2110; --good: #4cc38a; --bad: #ec7a66;
-      --code-bg: #07080a; --code-text: #e9ebef;
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #0b0c0e; --panel: #131519; --border: #262a32; --text: #e9ebef; --dim: #a0a6b0; --faint: #687080;
-    --accent: #b9a8ff; --accent-bg: #1d1934; --warm: #e2b24c; --warm-bg: #2a2110; --good: #4cc38a; --bad: #ec7a66;
-    --code-bg: #07080a; --code-text: #e9ebef;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 var(--sans); }
-  main { max-width: 1040px; margin: 0 auto; padding: 48px 16px 96px; }
-  a { color: inherit; }
-  .eyebrow { font: 600 13px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; }
-  h1 { font-size: clamp(34px, 6vw, 60px); line-height: 1.05; letter-spacing: -0.02em; margin: 0 0 20px; max-width: 900px; }
-  h2 { font-size: clamp(24px, 3.5vw, 34px); line-height: 1.15; letter-spacing: -0.01em; margin: 0 0 14px; }
-  h3 { font-size: 18px; margin: 0 0 6px; }
-  p { margin: 0 0 12px; }
-  .lede { font-size: clamp(17px, 2.2vw, 21px); color: var(--dim); max-width: 760px; margin-bottom: 28px; }
-  .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
-  .btn { display: inline-block; font: 600 15px var(--sans); padding: 11px 18px; border-radius: 8px; border: 1px solid var(--text); text-decoration: none; }
-  .btn.primary { background: var(--text); color: var(--bg); }
-  pre { background: var(--code-bg); color: var(--code-text); font: 13.5px/1.6 var(--mono); padding: 16px 18px; border-radius: 10px; overflow-x: auto; margin: 0 0 12px; }
-  code { font-family: var(--mono); font-size: 0.92em; }
-  section { margin-top: 72px; }
-  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .grid.two { grid-template-columns: repeat(2, 1fr); }
-  @media (max-width: 760px) { .grid, .grid.two { grid-template-columns: 1fr; } }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 22px; }
-  .card .tag { font: 600 12px var(--mono); color: var(--warm); margin-bottom: 8px; display: block; }
-  .muted { color: var(--dim); }
-  .timeline { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-  @media (max-width: 760px) { .timeline { grid-template-columns: 1fr; } }
-  .timeline > div { padding: 18px; background: var(--panel); border-right: 1px solid var(--border); }
-  .timeline > div:last-child { border-right: none; }
-  .timeline > div.pending { background: var(--warm-bg); }
-  .timeline .when { font: 600 12px var(--mono); color: var(--accent); }
-  .timeline .pending .when { color: var(--warm); }
-  table { width: 100%; border-collapse: collapse; font-size: 15px; }
-  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint); }
-  .table { overflow-x: auto; }
-  .honest { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; }
-  footer { margin-top: 80px; color: var(--faint); font-size: 14px; border-top: 1px solid var(--border); padding-top: 20px; }
-</style>
+<title>Germline · change control for AI agents</title>
+<meta name="description" content="Every change to an AI agent's prompt, model and limits, recorded, anchored on 0G, and enforceable on chain with a timelock." />
+<meta name="theme-color" content="#120c07" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='5' width='22' height='22' rx='7' fill='%23f0a63a'/%3E%3Ccircle cx='13' cy='13' r='2.5' fill='%23ffd27a'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="assets/base.css" />
+<link rel="stylesheet" href="assets/sections.css" />
+<script>document.documentElement.className = "js"; setTimeout(function () { document.documentElement.classList.add("ready"); }, 2500);</script>
 </head>
 <body>
-<main>
-  <p class="eyebrow">Germline · open source · built on 0G</p>
-  <h1>A timelock for what AI agents are told to do.</h1>
-  <p class="lede">An agent that moves money is only as safe as its prompt, model and limits, and those can change overnight without a trace. Germline records every change, anchors it on 0G, and lets contracts pause the agent until the people it affects have read the change.</p>
-  <div class="cta">
-    <a class="btn primary" href="https://github.com/let-the-dreamers-rise/germline">View on GitHub</a>
-    <a class="btn" href="verify.html">Verify a log in your browser</a>
-    <a class="btn" href="https://github.com/let-the-dreamers-rise/germline/blob/main/docs/AGENTS.md">Read the agent guide</a>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" aria-hidden="true"><span></span></div>
+
+<header class="nav">
+  <a class="brand" href="#top" aria-label="Germline home"><span class="brand-mark" aria-hidden="true"></span>Germline</a>
+  <nav aria-label="Primary">
+    <a href="#how">How it works</a>
+    <a href="#timelock">Timelock</a>
+    <a href="#try">Try it</a>
+    <a class="nav-gh" href="https://github.com/let-the-dreamers-rise/germline">GitHub</a>
+  </nav>
+</header>
+
+<main id="main">
+<!-- HERO: a silent edit gets caught and set in amber -->
+<section class="hero" id="top">
+  <div class="hero-copy">
+    <p class="eyebrow" data-rise>Change control for AI agents · built on 0G</p>
+    <h1 class="split">Every change to your agent, set in amber.</h1>
+    <p class="lede" data-rise>An agent is only as trustworthy as what it’s told to do. Germline records every change to its prompt, model and limits, anchors it on 0G, and pauses the agent until the people it affects have read the change.</p>
+    <div class="cta-row" data-rise>
+      <button class="copy" type="button" data-copy="npx github:let-the-dreamers-rise/germline init"><code>npx germline init</code><span class="copy-label">Copy</span></button>
+      <a class="btn ghost" href="https://github.com/let-the-dreamers-rise/germline">Star on GitHub</a>
+    </div>
+    <p class="hint" data-rise>Five-minute setup. No wallet, no account, no SDK in your request path.</p>
   </div>
-  <pre>npx github:let-the-dreamers-rise/germline demo     # one minute: record, verify, tamper, get caught</pre>
 
-  <section>
-    <p class="eyebrow">The problem</p>
-    <h2>An agent’s prompt is its smart contract. Today anyone holding the server can rewrite it.</h2>
-    <div class="grid">
-      <div class="card"><h3>Agents hold money</h3><p class="muted">Trading agents, agent vaults and DAO delegates act on funds other people deposited.</p></div>
-      <div class="card"><h3>Behaviour lives off chain</h3><p class="muted">The prompt, model, tool list and limits sit on the operator’s server. Code gets audited. Instructions don’t.</p></div>
-      <div class="card"><h3>A silent rug</h3><p class="muted">One line, <code>maxTradeUsd 100 → 100000</code>, changes what the agent will do, and leaves nothing on chain.</p></div>
+  <div class="hero-stage" aria-label="A config change being recorded and sealed">
+    <div class="specimen" data-tilt>
+      <div class="glow" aria-hidden="true"></div>
+      <div class="resin" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div class="drop" aria-hidden="true"></div>
+      <div class="cfg">
+        <p class="cfg-file">agent.config.json</p>
+        <p><span class="k">model</span> <span class="v">"model-a"</span></p>
+        <p><span class="k">tools</span> <span class="v">mcp.json</span></p>
+        <p class="hot"><span class="k">maxTradeUsd</span> <span class="v"><span class="ghost-val" aria-hidden="true">100</span><span class="real-val">100 → 100000</span></span></p>
+        <p class="cfg-state"><span class="state-before">edited on the server · no record</span><span class="state-after">entry #3 · sealed · anchored on 0G</span></p>
+        <p class="cfg-hash">head <span data-hero-hash>0x…</span></p>
+      </div>
     </div>
-  </section>
+    <p class="guard-pill"><span class="dot" aria-hidden="true"></span>GermlineGuard: agent paused until the change settles</p>
+  </div>
+</section>
 
-  <section>
-    <p class="eyebrow">How it works</p>
-    <h2>Record. Anchor. Enforce.</h2>
-    <div class="grid">
-      <div class="card"><span class="tag">npx germline init</span><h3>Record</h3><p class="muted">A GitHub Action logs every change to prompts, models and agent configs (ElizaOS characters, <code>SOUL.md</code>, <code>mcp.json</code>, any config file): who made it, which pull request approved it, exactly what moved, and the eval behind it.</p></div>
-      <div class="card"><span class="tag">GermlineAnchor</span><h3>Anchor</h3><p class="muted">Each entry is hash-chained to the last, and the head is pinned on 0G Chain in an append-only registry with no owner. A copy goes to 0G Storage. One edited byte fails verification, offline or on chain.</p></div>
-      <div class="card"><span class="tag">GermlineGuard</span><h3>Enforce</h3><p class="muted">A vault calls <code>guard.check(head)</code> before the agent acts. Every published config change pauses the agent for a set delay, so depositors can read it and leave.</p></div>
+<!-- MARQUEE: what it plugs into, and what it maps to (from the README) -->
+<section class="marquee" aria-label="Works with and maps to">
+  <p class="marquee-label">Works with what you run · maps to what you’re audited on</p>
+  <div class="marquee-track">
+    <ul class="marquee-row">
+      <li>GitHub Actions</li><li>ElizaOS characters</li><li>SOUL.md</li><li>mcp.json</li><li>0G Chain</li><li>0G Storage</li><li>0G Compute</li><li>SOC 2 CC8.1</li><li>EU AI Act Art. 12 &amp; 19</li><li>ISO/IEC 42001</li><li>CSV for Vanta, Drata, DSALTA</li>
+    </ul>
+    <ul class="marquee-row" aria-hidden="true">
+      <li>GitHub Actions</li><li>ElizaOS characters</li><li>SOUL.md</li><li>mcp.json</li><li>0G Chain</li><li>0G Storage</li><li>0G Compute</li><li>SOC 2 CC8.1</li><li>EU AI Act Art. 12 &amp; 19</li><li>ISO/IEC 42001</li><li>CSV for Vanta, Drata, DSALTA</li>
+    </ul>
+  </div>
+</section>
+
+<!-- BEFORE / AFTER: Grok's public prompt history (docs/CASE-STUDY-GROK.md) -->
+<section class="band compare" id="compare">
+  <p class="eyebrow" data-rise>Before and after</p>
+  <h2 class="split">A changelog shows what changed. It can’t say who, why, or whether it’s complete.</h2>
+  <p class="sub" data-rise>We ran Germline, unchanged, over xAI’s public Grok prompt repository: 14 changes from May to November 2025.</p>
+  <div class="ba">
+    <article class="ba-card before" data-rise>
+      <p class="ba-tag">Before · what git records</p>
+      <p class="ba-commit"><code>535aa67</code> · 6 Jul 2025 · “Updated grok prompts”</p>
+      <blockquote>“The response should not shy away from making claims which are politically incorrect, as long as they are well substantiated.”</blockquote>
+      <dl class="facts">
+        <div><dt>Distinct authors</dt><dd>1 <small>(a CI account)</small></dd></div>
+        <div><dt>Distinct reasons</dt><dd>2 <small>(13 × “Updated grok prompts”)</small></dd></div>
+        <div><dt>With an approval</dt><dd>0 of 14</dd></div>
+        <div><dt>With test evidence</dt><dd>0 of 14</dd></div>
+        <div><dt>Pinned outside the repo</dt><dd>No <small>(it can be force-pushed)</small></dd></div>
+      </dl>
+    </article>
+    <article class="ba-card after" data-rise>
+      <p class="ba-tag">After · what every Germline entry carries</p>
+      <ul class="fields">
+        <li><span>author</span>from git</li>
+        <li><span>approved by</span>the pull-request approval, from GitHub’s API</li>
+        <li><span>reason</span>the commit message and ticket</li>
+        <li><span>diff</span>the exact setting that moved</li>
+        <li><span>eval</span>score, baseline and suite, if you attach one</li>
+        <li><span>prev</span>the hash of the entry before it</li>
+        <li><span>anchor</span>the log head, pinned on 0G Chain</li>
+      </ul>
+      <p class="muted">Two days after that line went in, Grok posted antisemitic content and the line was removed. A reader can see both commits. Nobody outside can see who approved them, or prove the history wasn’t rewritten.</p>
+    </article>
+  </div>
+</section>
+
+<!-- STICKY STORY: Record, Anchor, Enforce, Verify -->
+<section class="band story" id="how">
+  <p class="eyebrow" data-rise>How it works</p>
+  <h2 class="split">Caught, set, enforced, checked by anyone.</h2>
+  <div class="story-grid">
+    <div class="story-steps">
+      <article class="step" data-step="0">
+        <p class="step-n">01 · Record</p>
+        <h3>A GitHub Action catches every change</h3>
+        <p>One entry per commit that touches a prompt or agent config: ElizaOS characters, <code>SOUL.md</code>, <code>mcp.json</code> or any config file. The first push backfills your history. The log lives on its own branch, so a protected <code>main</code> needs no bot bypass.</p>
+      </article>
+      <article class="step" data-step="1">
+        <p class="step-n">02 · Anchor</p>
+        <h3>The head sets on 0G Chain</h3>
+        <p>Entries are hash-chained, and the head is anchored in <code>GermlineAnchor</code>, an append-only registry with no owner, no admin and no upgrade path. A copy goes to 0G Storage, so an auditor never has to ask you for it.</p>
+      </article>
+      <article class="step" data-step="2">
+        <p class="step-n">03 · Enforce</p>
+        <h3>The agent waits while the change cures</h3>
+        <p>A vault calls <code>guard.check(head)</code> before the agent acts. Each published change pauses the agent for a set delay, so depositors read it and decide whether to stay. Withdrawals are never gated.</p>
+      </article>
+      <article class="step" data-step="3">
+        <p class="step-n">04 · Verify</p>
+        <h3>Anyone can check it, without trusting you</h3>
+        <p>Pin the log ID and the operator’s address, and even a full rewrite of the file fails. Run <code>germline verify</code>, or drop the log into the browser verifier. It uploads nothing.</p>
+      </article>
     </div>
-  </section>
-
-  <section>
-    <p class="eyebrow">The timelock</p>
-    <h2>A config change opens an exit window</h2>
-    <div class="timeline">
-      <div><p class="when">DAY 0</p><h3>Config A runs</h3><p class="muted">Anchored and settled. The vault lets the agent trade.</p></div>
-      <div class="pending"><p class="when">DAY 3</p><h3>Operator anchors B</h3><p class="muted">The trade limit moves 100 → 100,000. A stops passing; B is pending. The agent is paused.</p></div>
-      <div class="pending"><p class="when">DAY 3 → 4</p><h3>Anyone reads it</h3><p class="muted">The diff is public and verifiable. Depositors who disagree withdraw, which is never gated.</p></div>
-      <div><p class="when">DAY 4</p><h3>B settles</h3><p class="muted">After the delay the agent resumes under the new rules.</p></div>
+    <div class="story-stage" aria-hidden="true">
+      <div class="panel p0"><pre><span class="c">$</span> npx germline init
+<span class="ok">found</span> prompts/support.md
+<span class="ok">found</span> agent/character.json
+<span class="ok">wrote</span> .github/workflows/germline.yml
+<span class="c">$</span> git push
+<span class="ok">recorded</span> entry #1 … #12</pre></div>
+      <div class="panel p1"><div class="blocks"><b></b><b></b><b></b><b class="head"></b></div><p class="mono">head → GermlineAnchor · 0G Chain</p></div>
+      <div class="panel p2"><pre>contract MyAgentVault is GermlineGuarded {
+  function trade(bytes32 head, …)
+    external onlySettledConfig(head)
+  { … }
+}</pre></div>
+      <div class="panel p3"><pre><span class="c">$</span> npx germline verify --chain --strict
+<span class="ok">✓</span> hash chain intact
+<span class="ok">✓</span> head matches anchor on 0G
+<span class="ok">✓</span> every earlier anchor still matches</pre></div>
     </div>
-    <p style="margin-top:16px">Gate any function on it:</p>
-<pre>import "germline/contracts/GermlineGuard.sol";
+  </div>
+</section>
 
-contract MyAgentVault is GermlineGuarded {
-    function trade(bytes32 configHead, ...) external onlySettledConfig(configHead) { ... }
-}</pre>
-    <p class="muted">Watch the whole story run on a local chain: <code>npm run demo:agent</code>.</p>
-  </section>
-
-  <section>
-    <p class="eyebrow">Why 0G</p>
-    <h2>Verifiable AI needs a chain, storage and compute in one stack</h2>
-    <div class="table"><table>
-      <tr><th>0G layer</th><th>What Germline uses it for</th></tr>
-      <tr><td>0G Chain</td><td>Holds every log head, and GermlineGuard reads them. Cheap enough to anchor every commit.</td></tr>
-      <tr><td>0G Storage</td><td>A public copy of each anchored log, with its root on chain, so a verifier never has to ask the operator for it.</td></tr>
-      <tr><td>0G Compute</td><td>A model reviews each change and flags its risk for the approver (<code>germline review</code>).</td></tr>
-      <tr><td>0G Compute TEE (next)</td><td>Attest which prompt and model actually ran, and accept only those matching the settled config.</td></tr>
-    </table></div>
-  </section>
-
-  <section>
-    <p class="eyebrow">Also for teams shipping LLM features</p>
-    <h2>The same record answers your auditor</h2>
-    <p class="muted" style="max-width:760px">SOC 2 CC8.1, enterprise security reviews and the EU AI Act (Art. 12 and 19) all ask what the model was configured to do, who changed it, and how it was tested. <code>germline report</code> exports an evidence pack, or one CSV row per change for Vanta, Drata or DSALTA, that the auditor re-checks without trusting you.</p>
-<pre>npx germline report --format cc81 --out cc81.csv
-npx germline verify --log-id 0x… --chain --anchorer 0x… --strict</pre>
-  </section>
-
-  <section>
-    <p class="eyebrow">What it proves, and what it doesn’t</p>
-    <div class="grid two">
-      <div class="card honest"><h3>Proves</h3><p class="muted">What the operator published, and when. Every change is fixed by a 0G block and can’t be edited, reordered or hidden afterwards. Pin the log ID and the operator’s address and even a full rewrite of the file is caught.</p></div>
-      <div class="card honest"><h3>Doesn’t prove (yet)</h3><p class="muted">That the server actually loaded the published config. A silent change now means publishing a false, permanent, attributable claim instead of an invisible edit. Binding it to execution is the 0G Compute TEE step on the roadmap.</p></div>
+<!-- PINNED: the timelock cures as you scroll -->
+<section class="timelock" id="timelock">
+  <div class="tl-inner">
+    <div class="tl-head">
+    <div><p class="eyebrow">The timelock</p>
+    <h2 class="split">A config change opens an exit window.</h2></div>
+    <div class="tl-viz" aria-hidden="true">
+      <div class="cube a"><span>A</span><small>maxTradeUsd 100</small></div>
+      <div class="cube b"><span>B</span><small>maxTradeUsd 100000</small></div>
     </div>
-    <p class="muted" style="margin-top:12px">Every attack the format catches, with the test that proves it, is listed in <a href="https://github.com/let-the-dreamers-rise/germline/blob/main/SECURITY.md">SECURITY.md</a>.</p>
-  </section>
+    </div>
+    <div class="tl-meter" aria-hidden="true"><span></span><em>delay: curing</em></div>
+    <ol class="tl-steps">
+      <li data-tl="0"><p class="when">Day 0</p><h3>Config A runs</h3><p>Anchored and settled. The vault lets the agent trade.</p></li>
+      <li data-tl="1"><p class="when">Day 3</p><h3>The operator anchors B</h3><p>The trade limit moves 100 → 100,000. A stops passing and B is pending, so the agent is paused.</p></li>
+      <li data-tl="2"><p class="when">Day 3 → 4</p><h3>Anyone reads it</h3><p>The diff is public and verifiable. Depositors who disagree withdraw.</p></li>
+      <li data-tl="3"><p class="when">Day 4</p><h3>B settles</h3><p>After the delay the agent resumes under the new rules.</p></li>
+    </ol>
+    <p class="tl-status" aria-live="polite">Agent: <strong data-tl-status>trading on A</strong></p>
+  </div>
+</section>
 
-  <footer>
-    Germline Labs · MIT licensed · <a href="https://github.com/let-the-dreamers-rise/germline">GitHub</a> · <a href="verify.html">Verifier</a> · <a href="lineage.html">Earlier work: verifiable config search lineage</a>
-  </footer>
+<!-- BENTO: six features, each with its own loop -->
+<section class="band bento-wrap">
+  <p class="eyebrow" data-rise>What’s inside</p>
+  <h2 class="split">Built so the record holds up.</h2>
+  <div class="bento">
+    <article class="tile t-wide" data-loop><div class="viz v-chain" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><h3>Hash chain</h3><p>Each entry carries the hash of the one before it. One edited byte fails <code>verify</code>, offline.</p></article>
+    <article class="tile" data-loop><div class="viz v-stack" aria-hidden="true"><i></i><i></i><i></i></div><h3>Ownerless registry</h3><p>No owner, no admin, no upgrade path. Every anchor ever made stays readable.</p></article>
+    <article class="tile" data-loop><div class="viz v-copy" aria-hidden="true"><i></i><i></i></div><h3>Copy on 0G Storage</h3><p>The log’s root goes on chain, so an auditor can fetch it without asking you.</p></article>
+    <article class="tile" data-loop><div class="viz v-review" aria-hidden="true"><i></i><i></i><i></i><i></i></div><h3>0G Compute review</h3><p>A model writes a two-sentence summary and a risk level. It’s advice, never an approval.</p></article>
+    <article class="tile" data-loop><div class="viz v-redact" aria-hidden="true"><span>maxTradeUsd: 100000</span><span>maxTradeUsd: 0x7c1e…</span></div><h3>Redaction</h3><p>Reviewers see which setting moved, not its value.</p></article>
+    <article class="tile t-wide" data-loop><div class="viz v-rows" aria-hidden="true"><i></i><i></i><i></i><i></i></div><h3>Evidence pack</h3><p>One command exports Markdown, or SOC 2 CC8.1 rows for Vanta, Drata or DSALTA. Where there’s no anchor or eval, it says “Not yet”.</p></article>
+  </div>
+</section>
+
+<!-- TOY: try to rewrite history -->
+<section class="band toy" id="try">
+  <p class="eyebrow" data-rise>Try it</p>
+  <h2 class="split">Try to rewrite history.</h2>
+  <p class="sub" data-rise>A four-entry log, hashed for real in your browser with SHA-256. Change a value and watch it crack. Then try re-hashing the whole chain, the way a forger would.</p>
+  <div class="toy-box">
+    <ol class="log" data-log><li class="muted">This demo needs JavaScript. The real verifier is <a href="verify.html">verify.html</a>.</li></ol>
+    <div class="toy-side">
+      <p class="mono anchor-line">anchored on 0G <span data-anchored>—</span></p>
+      <p class="mono anchor-line">log head now <span data-current>—</span></p>
+      <p class="verdict" data-verdict aria-live="polite">—</p>
+      <div class="toy-actions">
+        <button class="btn ghost" type="button" data-rechain>Re-hash the whole chain</button>
+        <button class="btn ghost" type="button" data-reset>Reset</button>
+      </div>
+      <p class="muted small">Simplified for this page. The real format, with canonical bytes and config roots, is in <a href="https://github.com/let-the-dreamers-rise/germline/blob/main/docs/AUDIT.md">docs/AUDIT.md</a>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- STATS: measured, from docs/INCIDENTS.md -->
+<section class="band stats">
+  <p class="eyebrow" data-rise>Measured</p>
+  <h2 class="split">What it costs to run.</h2>
+  <div class="stat-grid">
+    <div class="stat" data-rise><p class="num">~<span data-count="80000">80,000</span></p><p>gas to anchor a log head (95,000 for a log’s first)</p></div>
+    <div class="stat" data-rise><p class="num">~<span data-count="16800">16,800</span></p><p>gas the guard adds to each agent payment</p></div>
+    <div class="stat" data-rise><p class="num">~<span data-count="347000">347,000</span></p><p>gas to deploy a guard</p></div>
+    <div class="stat" data-rise><p class="num"><span data-count="0.19" data-dec="2">0.19</span> s</p><p>to verify a 1,000-entry log offline</p></div>
+  </div>
+  <p class="muted small" data-rise>From <code>npm run bench:guard</code> on a local Hardhat chain (gas is deterministic). Verify timing on Node 22, one 2.8 GHz Xeon core.</p>
+</section>
+
+<!-- FAQ: from the README's "What it is not" -->
+<section class="band faq">
+  <p class="eyebrow" data-rise>Straight answers</p>
+  <h2 class="split">What it is, and what it isn’t.</h2>
+  <div class="faq-list">
+    <details><summary>Does Germline make us compliant?</summary><div class="a"><p>No. It produces evidence for one control, change management of AI behaviour. Your assessor decides the rest. The evidence pack maps the record to SOC 2 CC8.1, EU AI Act Art. 12 and 19 and ISO/IEC 42001, and says “Not yet” wherever the log can’t back a claim.</p></div></details>
+    <details><summary>Does it prove the server ran the published config?</summary><div class="a"><p>Not yet. It binds what the operator publishes. A silent change now means publishing a false, permanent, attributable claim instead of an invisible edit. Binding it to execution is the 0G Compute TEE step on the roadmap.</p></div></details>
+    <details><summary>Does it log what the model said?</summary><div class="a"><p>No. LangSmith and Langfuse record inference traffic. Germline records what the model was configured to do, and makes that record impossible to quietly rewrite.</p></div></details>
+    <details><summary>Does it authenticate commit authors?</summary><div class="a"><p>No. Git lets anyone write any name. The approval comes from GitHub’s API and is authenticated; the author line is only what git says. Signed entries are on the roadmap.</p></div></details>
+    <details><summary>What do I need to start?</summary><div class="a"><p>Run <code>init</code> in the repository that holds your prompts and config, then commit and push. To anchor on 0G, add a funded 0G key as the secret <code>GERMLINE_ANCHOR_KEY</code>. Until then the log is still recorded and verified on every push.</p></div></details>
+    <details><summary>Is it live on 0G mainnet?</summary><div class="a"><p>Not yet. The anchor registry and the guard are tested on a local chain. Mainnet deployment needs a funded key, and <code>npm run deploy:anchor</code> does it.</p></div></details>
+  </div>
+</section>
+
+<!-- CLOSING CTA -->
+<section class="closing">
+  <div class="closing-glow" aria-hidden="true"></div>
+  <h2 class="split">Seal your agent’s next change.</h2>
+  <p class="sub" data-rise>In the repository that holds your prompts and agent config:</p>
+  <div class="cta-row center" data-rise>
+    <button class="copy big" type="button" data-copy="npx github:let-the-dreamers-rise/germline init"><code>npx github:let-the-dreamers-rise/germline init</code><span class="copy-label">Copy</span></button>
+  </div>
+  <div class="cta-row center" data-rise>
+    <a class="btn" href="https://github.com/let-the-dreamers-rise/germline">Star on GitHub</a>
+    <a class="btn ghost" href="https://github.com/let-the-dreamers-rise/germline#readme">Run the one-minute demo</a>
+    <a class="btn ghost" href="verify.html">Verify a log in your browser</a>
+  </div>
+</section>
 </main>
+
+<footer class="foot">
+  <div class="foot-chain" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="foot-row">
+    <p class="brand"><span class="brand-mark" aria-hidden="true"></span>Germline</p>
+    <nav aria-label="Footer">
+      <a href="https://github.com/let-the-dreamers-rise/germline">GitHub</a>
+      <a href="verify.html">Verifier</a>
+      <a href="https://github.com/let-the-dreamers-rise/germline/blob/main/docs/AGENTS.md">Agent guide</a>
+      <a href="https://github.com/let-the-dreamers-rise/germline/blob/main/docs/CASE-STUDY-GROK.md">Grok case study</a>
+      <a href="https://github.com/let-the-dreamers-rise/germline/blob/main/SECURITY.md">Security</a>
+      <a href="lineage.html">Earlier work</a>
+    </nav>
+  </div>
+  <p class="foot-note">Germline Labs · MIT licensed · open source</p>
+</footer>
+
+<script src="vendor/gsap.min.js" defer></script>
+<script src="vendor/ScrollTrigger.min.js" defer></script>
+<script src="vendor/SplitText.min.js" defer></script>
+<script src="assets/toy.js" defer></script>
+<script src="assets/motion.js" defer></script>
 </body>
 </html>
