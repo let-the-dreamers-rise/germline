@@ -17,3 +17,16 @@ jobs:
         with: { node-version: 20, cache: npm }
       - run: npm ci
       - run: npm test
+  action:
+    # Runs the GitHub Action from this checkout against this repository, the
+    # way a customer's workflow would, minus the commit back.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm ci --omit=dev && node bin/germline.js init --files README.md,docs/AUDIT.md --system self-test --no-workflow
+      - uses: ./
+        with:
+          commit: "false"
+      - run: echo "one more line" >> docs/AUDIT.md && node bin/germline.js track && node bin/germline.js verify && node bin/germline.js log

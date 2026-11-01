@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "log": ".germline/audit.jsonl",
+  "systems": [
+    {
+      "name": "germline-examples",
+      "files": ["examples/prompt-config.js", "examples/llm-judge.js", "examples/pricing-rules.js"],
+      "redact": false
+    }
+  ]
+}

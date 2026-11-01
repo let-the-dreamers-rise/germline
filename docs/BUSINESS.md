@@ -1,159 +1,108 @@
 # Business
 
 Short, and honest about which parts are measured and which are assumptions.
+Nothing here has been validated with a paying customer yet.
 
-## Update, 0.3.0: what is being sold
+## What is sold
 
-The product is now the audit trail (`germline record / verify / anchor /
-report`, see `docs/AUDIT.md`): a tamper-evident record of changes to an AI
-system's prompts, models and parameters, anchored on 0G, aimed at teams who
-are asked for change records by auditors, enterprise customers or the EU AI
-Act. Config search stays in the package as the feature that produces the
-evidence for a change, not as the thing customers pay for.
-
-The reasoning below still holds and is kept as written: our own benchmark
-showed search is a commodity, and the record is the part nobody else gives
-you. What changed is who the record is for. "Provenance" was a property;
-"the change log your SOC 2 auditor asked for" is a budget line.
-
-Still unproven, in order: that teams will log changes this way rather than
-in a spreadsheet, that the on-chain anchor matters to an auditor more than
-a signed PDF would, and what anyone will pay.
-
-## The wedge
-
-Germline does not ask a team to adopt a platform. It asks for a function they
-already have.
-
-Any team far enough along to care about tuning has already built an eval: a
-scored test set, a shadow-traffic replay, an offline judge. That function is
-the expensive part and they own it. Germline is a thin layer on top of it:
-
-```js
-evaluate: async (config) => ({ score: await runEvalSet(config) })
-```
-
-That is the entire integration surface. No data leaves, no model is replaced,
-no vendor sits in the request path. The teams who feel the tuning pain most
-sharply are exactly the teams who already have the one thing Germline needs,
-which is a rare alignment for a developer tool.
-
-## What it is worth, measured
-
-This section previously claimed the search captured 80% of the available
-headroom for 21% of the evaluation budget. Both numbers were true. The claim
-was wrong anyway, because nobody had run the control. Here it is:
-
-```
-landscape                  space budget  sampled  evolution  random   winner
-synthetic, smooth            216     45   20.83%       7821    9159   random
-synthetic, rugged            216     45   20.83%       5225    9500   random
-ARC corpus, real data       6144     38    0.62%       4865    4765   evolution
-```
-
-`node scripts/benchmark.js`. Random sampling beats the evolutionary search on
-two of three landscapes, and on the flagship example it wins **99.8% of the
-time**.
-
-That kills one business and clarifies another. Germline is not an optimiser
-vendor -- optimisation is a commodity and a good one is often four lines of
-`Math.random()`. Germline sells the record: which configuration, derived from
-which parent, under a seed nobody could choose, scoring what, against evidence
-anyone can recompute.
-
-The control now ships in the box and runs by default, so a customer discovers
-this from the tool rather than from a competitor. A vendor that tells you not
-to use its own headline feature is a vendor you can believe about the rest.
-
-Where selection does earn its place is sparse sampling -- under about one
-percent of the space, which is what a real configuration space looks like.
-That is a narrower claim than the original and it is the one supported by
-evidence.
-
-## How it makes money
-
-The split is already built into the code, which is why it is credible rather
-than aspirational: `optimise()` runs entirely locally unless you hand it a
-contract and a signer.
-
-**Free, local.** Define a trial, run the search, get a better configuration.
-No wallet, no account. This is the whole product for a solo developer, and it
-is what earns the right to charge for anything.
-
-**Paid, usage-based.** Charge per evaluation orchestrated, in the way CI is
-billed per minute. It scales with the value delivered, it is legible on an
-invoice, and a customer who runs more searches is a customer getting more out
-of it.
-
-**Paid, provenance.** The verifiable lineage is the tier that needs the chain:
-an auditable record that a customer's own customer can check without trusting
-either of them. This is where regulated deployments live, and it is the part
-no single-tenant tool can offer, because the whole point is that the vendor is
-not the one attesting.
-
-*Speculative:* the specific price points. I have measured the value ratio, not
-what anyone will pay for it.
-
-## Why it compounds
-
-Two effects, one near and one further out.
-
-**A corpus of what actually works.** Every trial produces (configuration,
-measured outcome) pairs. Across many customers that becomes a prior worth
-having -- which knobs matter, where the interactions are, what a sensible
-starting point looks like for a RAG agent versus a retrieval pipeline. A
-single-tenant tool cannot build this. Germline's own reference trial already
-demonstrates the kind of finding it produces: the fittest configuration is not
-the most complex one, which nobody would guess by inspection.
-
-**Configurations become assets.** A configuration with a verified track record
-is worth something, and via Agentic ID it can be owned and transferred. That
-turns an optimisation tool into a market: a proven config has a price and a
-lineage a buyer can check. This is the reason to be on a chain at all rather
-than in a database.
-
-*Speculative:* the marketplace. The primitives are built and the registry
-works, but no one has bought or sold a configuration, and a market needs both
-sides.
+A change record for AI behaviour that an auditor can check without trusting
+the company being audited. Each change to a prompt, model or parameter is
+recorded with its author, its approver (from the pull request), the reason
+and ticket, the exact setting that moved, and the eval behind it. The record
+is hash-chained and anchored on 0G. See `docs/AUDIT.md`.
 
 ## Who buys first
 
-1. **Teams shipping LLM agents who already run evals.** They have the eval
-   function, they have more knobs than they can test, and they know it. This
-   is the beachhead and the only one that matters at first.
-2. **Regulated or high-stakes deployments.** Finance, health, anything where
-   "which version produced this output" is a question someone external asks.
-   They buy the provenance tier, and they are the ones for whom a vendor
-   dashboard is not evidence.
-3. **Platforms with tunable customer-facing config.** The pricing example is
-   deliberately not an AI system: recommendation weights, matching thresholds,
-   discount ladders, retry policies. Same shape, no model required.
+**B2B SaaS teams with an AI feature and a SOC 2 audit in the next 12
+months**, typically 20 to 200 engineers, with prompts and model settings kept
+in a git repository.
 
-## Honest competitive picture
+Their problem is specific. SOC 2 CC8.1 asks that changes be authorised,
+tested and documented. For application code, GitHub plus Vanta or Drata
+already produces that evidence. For prompts it usually doesn't: prompts change
+outside the normal release process, the "test" is an eval nobody saved, and
+the reviewer approved a PR whose diff was 400 lines of prose. Enterprise
+security questionnaires now ask "how do you control changes to model
+behaviour?" outright.
 
-Programmatic prompt optimisation exists. Eval platforms exist. Hyperparameter
-search is decades old. If the pitch were "we optimise your config", the correct
-response would be that several people already do it, and our own benchmark
-says random sampling frequently does it better.
+What they buy is an answer they can hand over: a CSV for the GRC tool, a
+Markdown pack for the auditor, and a verification command the auditor runs
+themselves.
 
-So that is not the pitch. What is different is that the result carries a record
-anyone can verify without trusting the party that produced it, and that the
-result is an ownable asset rather than a row in someone's database. The search
-is table stakes -- genuinely commodity, and we ship a competitor to our own in
-the same package. The provenance is the product.
+The EU AI Act (Art. 12 and 19) is a second, later market. It applies to
+high-risk systems, which most SOC 2 SaaS products are not, so it isn't the
+opening pitch.
 
-The honest risk is that provenance turns out to be a nice-to-have rather than
-a requirement, in which case Germline is competing on search quality alone
-against incumbents with more data. The bet is that "prove which version did
-this" becomes mandatory rather than optional, and that bet is not yet won.
+## Why this, when git exists
+
+The honest objection is that git already records who changed a prompt file.
+Here is what git and a GRC tool don't give the buyer:
+
+1. **Setting-level diffs and eval evidence in one record.** A reviewer sees
+   "temperature 0.7 → 0.2, refunds-v4 score 0.84 → 0.91, approved by priya
+   in #212", not a raw diff and a separate CI log.
+2. **A record the company can't quietly rewrite.** Git history is the
+   company's own and can be force-pushed. An anchor on 0G is not. For an
+   auditor, that's the difference between "the vendor says" and "anyone can
+   check".
+3. **Prompts that don't live in git.** `track()` in the SDK records configs
+   loaded at runtime, from a database or a prompt-management tool.
+
+If a buyer's auditor is satisfied with GitHub PR evidence for prompts, Germline
+isn't needed. The bet is that, for AI behaviour specifically, it increasingly
+won't be.
+
+## Price
+
+These are proposals, not measured willingness to pay.
+
+| tier | price | what |
+|---|---|---|
+| Open source | free | CLI, GitHub Action, self-anchored with your own 0G key |
+| Team | $199 a month per repository group | hosted anchoring (we hold the key and pay gas), log storage on 0G, a hosted verifier page with your pins published at the start of the audit period, CSV export into Vanta and Drata |
+| Audit pack | $1,500 one-off | evidence pack prepared for one audit window, with an auditor walk-through |
+
+The hosted tier sells two things a team can't easily do alone. First, a third
+party holding the anchor key and publishing the pins early, which closes the
+"auditee builds a fake log the week before" gap in SECURITY.md. Second, not
+having to run a crypto wallet in CI.
+
+## Competition
+
+- **Vanta, Drata, Secureframe.** They collect change evidence from GitHub.
+  Germline complements them as an evidence source (CSV today, an integration
+  later) rather than competing.
+- **Langfuse, LangSmith, PromptLayer.** They version prompts and log inference.
+  Their audit logs are rows in the vendor's own database, not independently
+  verifiable, and they don't link changes to approvals and evals as one
+  record. They're also a possible source: a webhook from their prompt
+  registry into `track()`.
+- **Sigstore, Rekor, OpenTimestamps.** They're free transparency and
+  timestamping logs, and they could anchor the same heads. The registry's job
+  (append-only, per log and key, every anchor readable) could live on any
+  chain. 0G is used because it's cheap enough to anchor on every merge, and
+  because 0G Storage keeps the log itself beside the anchor.
+
+The moat isn't the code, which is small and MIT-licensed. It's being the
+format auditors already know how to check. That only comes from early
+auditor relationships, which is why the first milestone is an auditor and not
+a feature.
 
 ## What would prove this out
 
-In rough order, and none of it is done:
+In order, and none of it is done:
 
-- One real team running one real eval through the SDK, and a number for how
-  much their configuration improved.
-- A second independent trial on the same organism, so an attested score stops
-  being a single opinion.
-- Decentralised attestation, so the curator role stops being one address.
-- One configuration changing hands with its lineage intact.
+1. Three design partners running the action on a real repository through one
+   audit window.
+2. One auditor's written statement that they would accept the evidence pack
+   and run the verifier.
+3. One paying hosted-tier customer.
+4. GermlineAnchor deployed on 0G mainnet, with this repository's own log
+   anchored on it and linked from the README.
+
+## Search
+
+The package also contains an evolutionary config search with on-chain
+lineage (`docs/SEARCH.md`). Our own benchmark found random sampling beats it
+on two of three landscapes, so it isn't sold. It stays in the package as a way
+to produce eval evidence for a change.

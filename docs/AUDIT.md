@@ -37,46 +37,61 @@ anchoring and that record is itself covered by the next anchor.
 
 ## In CI
 
-Record on every merge that touches a config, verify on every build, anchor
-on a schedule. A GitHub Actions example:
+`npx germline init` writes `.github/workflows/germline.yml`, which uses the
+Germline GitHub Action (`action.yml` at the root of this repository). On
+every push it:
 
-```yaml
-name: ai-config-audit
-on:
-  push:
-    branches: [main]
-    paths: ["config/agent.json"]
-  schedule:
-    - cron: "0 3 * * *"
+1. verifies the existing log, and stops if it has been tampered with;
+2. records one entry per commit that touched a tracked file, credited to the
+   commit's author, with the commit's message as the reason and any ticket
+   (`ABC-123` or `#45`) it mentions; the CI identity is kept as `recordedBy`;
+3. commits the log with `[skip ci]` to the `germline-audit` branch (or the
+   same branch, if `log-branch` is empty) and pushes it, rebuilding and
+   retrying if someone pushed in between;
+4. only then, if `GERMLINE_ANCHOR_KEY` is set, anchors the pushed head on 0G
+   and pushes the anchor receipt.
 
-jobs:
-  audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 2 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: npm install -g germline
-      - run: germline verify
-      - if: github.event_name == 'push'
-        run: |
-          git show HEAD~1:config/agent.json > /tmp/before.json
-          germline record --system support-agent \
-            --actor "${{ github.actor }}" --ticket "${{ github.sha }}" \
-            --before /tmp/before.json --after config/agent.json \
-            --reason "$(git log -1 --pretty=%s)"
-      - if: github.event_name == 'schedule'
-        run: germline anchor --upload
-        env:
-          DEPLOYER_KEY: ${{ secrets.ZEROG_KEY }}
-      - run: |
-          git config user.name germline-bot
-          git config user.email germline-bot@users.noreply.github.com
-          git add .germline/audit.jsonl
-          git commit -m "audit: record config change" || true
-          git push
-```
+Pushing before anchoring matters: an anchor of entries that never reached the
+branch would make verification fail for an honest log forever. The workflow
+`init` writes uses `fetch-depth: 0`, so every commit is visible, and
+`concurrency: germline`, so two runs never write at once.
+
+### Branch protection
+
+The workflow `init` writes sets `log-branch: germline-audit`, so the log is
+committed to its own branch and `main` stays protected without a bot bypass.
+Protect `germline-audit` against force-pushes and deletion, but allow the
+workflow to push to it. Remove `log-branch` to keep the log beside the code
+instead; then the default branch must accept the workflow's pushes.
+
+### Approvals
+
+With `pull-requests: read` in the workflow's permissions (which `init`
+writes), each entry for a commit merged through a pull request records the
+PR number, who approved it (each reviewer's latest review), and who merged
+it, from the GitHub API. Those are authenticated GitHub accounts, unlike a
+commit's author line. A commit pushed straight to the branch has no
+approval, and the evidence pack says so.
+
+### Attaching test evidence
+
+`germline track --score 0.91 --baseline 0.84 --suite refunds-v4` or
+`germline track --eval-file eval.json` attaches the evaluation that justified
+the change to every entry it writes. Run it in the job that runs your evals.
+
+| input | default | meaning |
+|---|---|---|
+| `anchor-key` | empty | funded 0G key; empty means record and verify only |
+| `registry` | shipped deployment | GermlineAnchor address |
+| `upload` | `false` | also publish the log to 0G Storage; refuses unredacted config |
+| `allow-public-upload` | `false` | allow uploading unredacted config (0G Storage is public) |
+| `log-branch` | empty | branch that holds the log; `init` writes `germline-audit` |
+| `commit` | `true` | commit the updated log back to the branch |
+| `rpc` | `https://evmrpc.0g.ai` | 0G Chain RPC |
+
+The files to track live in `.germline/config.json`; edit the list there.
+JSON files are diffed setting by setting, anything else as text, and a
+deleted file is recorded as a change to `null`.
 
 Commit the log to the repository it describes. Git history then becomes a
 second, independent copy, and the anchor makes both checkable.

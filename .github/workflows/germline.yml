@@ -1,0 +1,36 @@
+# Germline on Germline: every change to the example prompts and configs in
+# this repository is recorded, reviewed on 0G Compute, and anchored on 0G
+# Chain, using the action from this checkout. The log is on the
+# germline-audit branch; verify it at web/verify.html.
+name: germline
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: germline
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: ./
+        with:
+          log-branch: germline-audit
+          anchor-key: ${{ secrets.GERMLINE_ANCHOR_KEY }}
+          # The examples are public code, so publishing the log is intended.
+          upload: "true"
+          allow-public-upload: "true"
+          review: ${{ secrets.ZEROG_COMPUTE_KEY != '' }}
+          compute-key: ${{ secrets.ZEROG_COMPUTE_KEY }}
