@@ -38,6 +38,20 @@ Every child's spawn transaction:
 
 The best child so far is organism 3, +1,368 bps over its parent. Five of its own children scored lower than it did, and they are recorded anyway: the lineage keeps the bad rolls.
 
+## The audit trail on BOT Chain (1 November 2026)
+
+The 0.4.0 audit trail anchors an AI system's configuration log on-chain. It was run on Bohr the same way:
+
+| | |
+|---|---|
+| Anchor registry | [0xC7a99F46674828aD14592fDaD319212f2ecd446D](https://scan.bohr.life/address/0xC7a99F46674828aD14592fDaD319212f2ecd446D), deployed in [0x8cc5cd40…4c03](https://scan.bohr.life/tx/0x8cc5cd40c1f450a396ef7ff252d7e73d4a68bbdcf74d6d908a19b75361264c03) |
+| Log recorded | 2 changes to a support agent's config (model, system prompt, temperature; second change with eval score 0.82 against a 0.74 baseline) |
+| Anchor transaction | [0x7e5e430e…ccc2](https://scan.bohr.life/tx/0x7e5e430e1011c40b922ae1e42b4037cbd777209a6e868428dd7348b22d95ccc2), block 28,871,398, 94,802 gas (0.0019 tBOT at 20 gwei) |
+| `germline verify --chain` with the log id and anchorer pinned | ok, exit 0 |
+| Same check after changing one value in the stored log (temperature 0.0 to 0.9) | FAILED, exit 1: "entry 1: contents do not match its hash" |
+
+Point the CLI at BOT Chain with `ZEROG_RPC=https://rpc.bohr.life`; it finds the registry from `deployments/bohr-anchor.json` by chain id.
+
 ## What the run says about randomness on BOT Chain
 
 - **Block producers.** In 600 consecutive blocks (28,722,605 to 28,723,204) there were 7 distinct producers, each making between 80 and 96 blocks, so production rotates evenly. A single producer makes about 1 block in 7.

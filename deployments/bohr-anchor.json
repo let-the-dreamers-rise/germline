@@ -1,0 +1,9 @@
+{
+  "network": "bohr",
+  "chainId": 968,
+  "address": "0xC7a99F46674828aD14592fDaD319212f2ecd446D",
+  "deployTx": "0x8cc5cd40c1f450a396ef7ff252d7e73d4a68bbdcf74d6d908a19b75361264c03",
+  "block": 28871392,
+  "deployer": "0xA1918A4E578babad074ACf7DCefB152f8FDC8D2E",
+  "deployedAt": "2026-11-01T06:03:48.492Z"
+}
