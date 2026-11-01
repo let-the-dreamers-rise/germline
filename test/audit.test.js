@@ -253,7 +253,9 @@ describe("audit trail", function () {
     });
 
     it("redaction keeps leaf roots, so later changes still name the setting", function () {
-      const log = openAuditLog(tempLog());
+      // A fixed clock: a real timestamp such as "…:20.2…" contains "0.2",
+      // which made the leak check below fail about one run in ten.
+      const log = openAuditLog(tempLog(), { clock: () => "2026-01-01T00:00:00.000Z" });
       log.track("s", BEFORE, { actor: "a", redact: true });
       const next = log.track("s", AFTER, { actor: "a", redact: true });
       expect(next.changes).to.deep.equal([{ key: "temperature" }]);
