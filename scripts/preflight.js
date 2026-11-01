@@ -12,7 +12,7 @@ const hre = require("hardhat");
 // The chain each network name must turn out to be. A mismatch means the RPC
 // is pointing somewhere unexpected, and deploying into it would burn real
 // tokens on the wrong chain.
-const EXPECTED_CHAIN = { zerog: 16661n, galileo: 16601n };
+const EXPECTED_CHAIN = { zerog: 16661n, galileo: 16601n, botchain: 677n, bohr: 968n };
 
 // Deploy is the largest single cost, but a demo also founds an organism and
 // breeds a few times. These are measured shapes, not guesses: seeding and
