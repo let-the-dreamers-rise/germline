@@ -30,12 +30,17 @@ function rootOf(schema, config, version) {
 // whatever that product's evaluate() happened to emit. Sorting keys at every
 // level makes the evidence root reproducible by anyone re-running the same
 // evaluation, which is the only reason to record it on chain at all.
+// Deep enough for any real config; shallow enough that recursion can't blow
+// the stack (a crafted 3,000-level file would otherwise crash every verifier).
+const MAX_DEPTH = 256;
+
 function stableStringify(value) {
-  return write(value, new Set());
+  return write(value, new Set(), 0);
 }
 
-function write(value, seen) {
+function write(value, seen, depth) {
   if (value === null) return "null";
+  if (depth > MAX_DEPTH) throw new TypeError("value is nested deeper than " + MAX_DEPTH + " levels");
 
   const type = typeof value;
   if (type === "number") {
@@ -57,13 +62,13 @@ function write(value, seen) {
   let out;
   if (Array.isArray(value)) {
     // Array order is meaningful, so it is left exactly as the product built it.
-    out = "[" + value.map((item) => write(item, seen)).join(",") + "]";
+    out = "[" + value.map((item) => write(item, seen, depth + 1)).join(",") + "]";
   } else {
     const keys = Object.keys(value).sort();
     out =
       "{" +
       keys
-        .map((key) => JSON.stringify(key) + ":" + write(value[key], seen))
+        .map((key) => JSON.stringify(key) + ":" + write(value[key], seen, depth + 1))
         .join(",") +
       "}";
   }
@@ -79,4 +84,17 @@ function hashText(text) {
   return keccak256(toUtf8Bytes(text));
 }
 
-module.exports = { canonical, rootOf, stableStringify, evidenceRootOf, hashText };
+function depthOf(value) {
+  // Iterative, so measuring a hostile value can't overflow the stack either.
+  let max = 0;
+  const stack = [[value, 0]];
+  while (stack.length) {
+    const [v, d] = stack.pop();
+    if (d > max) max = d;
+    if (max > MAX_DEPTH) return max;
+    if (v && typeof v === "object") for (const k of Object.keys(v)) stack.push([v[k], d + 1]);
+  }
+  return max;
+}
+
+module.exports = { MAX_DEPTH, depthOf, canonical, rootOf, stableStringify, evidenceRootOf, hashText };

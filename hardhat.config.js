@@ -29,6 +29,19 @@ module.exports = {
       chainId: 16601,
       accounts: DEPLOYER,
     },
+    // GermlineAnchor and GermlineGuard are plain EVM contracts (paris target,
+    // no precompiles), so they also deploy where agent wallets already live.
+    // 0G stays the default everywhere else in the tooling.
+    base: {
+      url: process.env.BASE_RPC || "https://mainnet.base.org",
+      chainId: 8453,
+      accounts: DEPLOYER,
+    },
+    baseSepolia: {
+      url: process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org",
+      chainId: 84532,
+      accounts: DEPLOYER,
+    },
     // BOT Chain (botchain.ai), an EVM L1 with 0.75 s blocks. Mainnet is chain
     // 677; Bohr is its public testnet (chain 968), with a faucet at
     // faucet.botchain.ai. Same paris-targeted bytecode as 0G.

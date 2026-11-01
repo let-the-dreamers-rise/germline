@@ -1,5 +1,13 @@
 # Germline search and lineage
 
+> **Legacy.** This page documents Germline's original product, an
+> evolutionary config search with on-chain lineage (`contracts/Germline.sol`,
+> live on 0G mainnet since Sep 3, 2026). It still ships in the package, as a
+> way to produce eval evidence for a change. Our own benchmark found random
+> sampling beats it on two of three landscapes, so it isn't the product. For
+> what Germline is now, see the [README](../README.md),
+> [AUDIT.md](AUDIT.md) and [AGENTS.md](AGENTS.md).
+
 The audit trail is what Germline sells. This document covers the older, separate part of the repository: an evolutionary search over AI configurations with on-chain lineage (`contracts/Germline.sol`, `sdk/optimise.js`, `engine/`). It is kept because it is live on 0G mainnet and its results are reproducible, not because a customer needs it to use the audit trail.
 
 ## Also in the box: config search with an honest control
@@ -317,7 +325,7 @@ npx hardhat run scripts/verify.js --network zerog
 npx hardhat run scripts/status.js    --network zerog
 ```
 
-Then open `web/index.html` to see the lineage and the fitness climb. It is a
+Then open `web/lineage.html` to see the lineage and the fitness climb. It is a
 single static file with no build step; pass `?address=0x...` or edit the
 config block at the top.
 

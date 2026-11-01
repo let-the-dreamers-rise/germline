@@ -53,27 +53,14 @@ const fs = require("fs");
 const path = require("path");
 const { keccak256, toUtf8Bytes } = require("ethers");
 const { stableStringify } = require("./canonical");
+// Reading and verifying a log live in one module the browser verifier shares.
+const core = require("./verify-core");
 
-const FORMAT = "germline.audit/1";
-const GENESIS = "0x" + "0".repeat(64);
+const { FORMAT, GENESIS, REGISTRY_ABI } = core;
 
-// Four bytes in front of the head hash in the anchor transaction's data, so
-// an anchor is recognisable on an explorer and cannot be confused with an
-// arbitrary 32-byte payload someone else sent. ASCII "grml".
-const ANCHOR_TAG = "0x67726d6c";
+const { ANCHOR_TAG } = core;
 
-// Clocks on different CI runners disagree a little. Beyond this, an entry
-// whose timestamp runs backwards, or claims to postdate the block that
-// anchored it, is reported.
-const CLOCK_SKEW_MS = 5 * 60 * 1000;
 
-const REGISTRY_ABI = [
-  "function anchor(bytes32 logId, uint64 entries, bytes32 head, bytes32 storageRoot) returns (uint256)",
-  "function anchorCount(bytes32 logId, address anchorer) view returns (uint256)",
-  "function anchorsOf(bytes32 logId, address anchorer, uint256 from, uint256 count) view returns (tuple(uint64 covered, uint64 timestamp, uint64 blockNumber, bytes32 head, bytes32 storageRoot)[])",
-  "event Anchored(bytes32 indexed logId, address indexed anchorer, uint256 indexed index, uint64 entries, bytes32 head, bytes32 storageRoot)",
-];
-const PAGE = 100;
 
 function hashOf(value) {
   return keccak256(toUtf8Bytes(stableStringify(value)));
@@ -187,101 +174,12 @@ function diffRoots(before, after) {
     .map((key) => ({ key }));
 }
 
-const ISO_TS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
-
 function readEntries(file) {
   if (!fs.existsSync(file)) return [];
-  const text = fs.readFileSync(file, "utf8");
-  const entries = [];
-  text.split("\n").forEach((line, index) => {
-    if (!line.trim()) return;
-    try {
-      const entry = JSON.parse(line);
-      // Every entry is an object. Anything else (null, a number, an array)
-      // is corruption, and must not crash the verifier.
-      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) throw new Error("not an object");
-      // The hash covers the parsed value, so the bytes must be the one
-      // serialisation of it: no duplicate keys, no padded numbers, no escapes
-      // that other parsers read differently. Our writer always emits this.
-      if (JSON.stringify(entry) !== line.replace(/\r$/, "")) {
-        Object.defineProperty(entry, "__noncanonical", { value: true, enumerable: false });
-      }
-      entries.push(entry);
-    } catch (error) {
-      // An unparseable line is itself evidence of tampering or corruption,
-      // so keep a placeholder that verify() will reject rather than skip it.
-      entries.push({ __unparseable: true, line: index + 1 });
-    }
-  });
-  return entries;
+  return core.readEntries(fs.readFileSync(file));
 }
 
-function withoutHash(entry) {
-  const { hash, ...rest } = entry;
-  return rest;
-}
-
-/// Check every link in the chain. Never throws on a bad log: a verifier that
-/// crashes on the thing it is meant to detect is not a verifier.
-function verifyEntries(entries) {
-  const problems = [];
-  const warnings = [];
-  let prev = GENESIS;
-  let lastTs = null;
-  entries.forEach((entry, index) => {
-    if (!entry.__unparseable) {
-      // ISO 8601 with an explicit zone, so every verifier reads the same instant.
-      const ts = typeof entry.ts === "string" && ISO_TS.test(entry.ts) ? Date.parse(entry.ts) : NaN;
-      if (!Number.isFinite(ts)) {
-        problems.push({ seq: index, reason: "timestamp " + JSON.stringify(entry.ts) + " is not a date" });
-      } else {
-        if (lastTs !== null && ts < lastTs - CLOCK_SKEW_MS) {
-          warnings.push({ seq: index, reason: "timestamp is earlier than the entry before it (backdated, or a badly wrong clock)" });
-        }
-        lastTs = ts;
-      }
-    }
-    if (entry.__unparseable) {
-      problems.push({ seq: index, reason: "line " + entry.line + " is not valid JSON" });
-      prev = null;
-      return;
-    }
-    if (entry.__noncanonical) {
-      problems.push({ seq: index, reason: "line is not in canonical form (duplicate keys, reformatted numbers or escapes)" });
-    }
-    if (entry.format !== FORMAT) {
-      problems.push({ seq: index, reason: "unknown format " + JSON.stringify(entry.format) });
-    }
-    if (entry.seq !== index) {
-      problems.push({ seq: index, reason: "sequence number " + entry.seq + ", expected " + index });
-    }
-    if (prev !== null && entry.prev !== prev) {
-      problems.push({ seq: index, reason: "does not link to the entry before it" });
-    }
-    let expected = null;
-    try {
-      expected = hashOf(withoutHash(entry));
-    } catch (error) {
-      problems.push({ seq: index, reason: "cannot be hashed: " + error.message });
-    }
-    if (expected !== null && entry.hash !== expected) {
-      problems.push({ seq: index, reason: "contents do not match its hash (edited after writing)" });
-    }
-    if (entry.kind === "review") {
-      const target = entries[entry.reviews];
-      if (!Number.isInteger(entry.reviews) || entry.reviews >= index || !target || target.hash !== entry.reviewsHash) {
-        problems.push({ seq: index, reason: "review does not point at an earlier entry with the hash it names" });
-      }
-    }
-    if (entry.kind === "change" && entry.after !== undefined && entry.configRoot !== configRootOf(entry.after)) {
-      problems.push({ seq: index, reason: "stored config does not match its recorded root" });
-    }
-    prev = entry.hash;
-  });
-  const head = entries.length ? entries[entries.length - 1].hash || null : GENESIS;
-  const logId = entries.length && !entries[0].__unparseable ? entries[0].hash || null : null;
-  return { ok: problems.length === 0, entries: entries.length, head, logId, problems, warnings };
-}
+const verifyEntries = core.verifyEntries;
 
 // One writer at a time. Two CI jobs appending at once would both link to the
 // same previous entry and fork the chain, which verify() would then -- rightly
@@ -320,39 +218,6 @@ function withLock(file, fn) {
       if (fs.readFileSync(lock, "utf8") === token) fs.unlinkSync(lock);
     } catch (ignored) {}
   }
-}
-
-async function readRegistryHistory(registry, logId, anchorer) {
-  const count = Number(await registry.anchorCount(logId, anchorer));
-  const all = [];
-  for (let from = 0; from < count; from += PAGE) {
-    const page = await registry.anchorsOf(logId, anchorer, from, PAGE);
-    for (const a of page) {
-      all.push({
-        index: all.length,
-        entries: Number(a.covered),
-        timestamp: Number(a.timestamp),
-        blockNumber: Number(a.blockNumber),
-        head: a.head,
-        storageRoot: a.storageRoot,
-      });
-    }
-  }
-  return all;
-}
-
-// Every entry an anchor covers must have been written before the block that
-// anchored it. A covered entry that claims a later time was backdated into
-// the past, or the log was rebuilt after the fact.
-function timestampProblem(all, coveredEntries, blockTimeSec) {
-  const limit = blockTimeSec * 1000 + CLOCK_SKEW_MS;
-  for (let i = 0; i < coveredEntries && i < all.length; i++) {
-    const ts = Date.parse(all[i].ts);
-    if (Number.isFinite(ts) && ts > limit) {
-      return "entry " + i + " claims " + all[i].ts + ", after the block that anchored it";
-    }
-  }
-  return null;
 }
 
 // Who to credit when the caller does not say: an explicit setting first, then
@@ -628,117 +493,7 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
   /// the check still runs, using what the log claims, with a warning that a
   /// wholesale rewrite under a new id or key would not be caught.
   async function verifyChain(provider, options = {}) {
-    const all = entries();
-    const local = verifyEntries(all);
-    const results = [];
-    const warnings = [];
-    const logId = options.logId || local.logId;
-    const anchorEntries = all.filter((e) => e && e.kind === "anchor");
-
-    if (!options.logId) warnings.push("log id not pinned: pass the id you were given, or a rewrite under a new id will not be caught");
-    if (options.logId && local.logId && options.logId.toLowerCase() !== local.logId.toLowerCase()) {
-      results.push({ seq: 0, source: "pin", ok: false, reason: "this log's id is " + local.logId + ", not the pinned " + options.logId });
-    }
-
-    const pinnedAnchorers = options.anchorer ? [].concat(options.anchorer).map((a) => a.toLowerCase()) : null;
-    if (!pinnedAnchorers) warnings.push("anchorer not pinned: pass the address you expect, or anchors from any key are accepted");
-    const anchorers = pinnedAnchorers || Array.from(new Set(anchorEntries.map((e) => String(e.anchorer).toLowerCase())));
-
-    for (const e of anchorEntries) {
-      if (pinnedAnchorers && !pinnedAnchorers.includes(String(e.anchorer).toLowerCase())) {
-        results.push({ seq: e.seq, source: "pin", ok: false, reason: "anchored by " + e.anchorer + ", which is not a pinned anchorer" });
-      }
-    }
-
-    // Registry anchors: the chain, not the log, is the list of what to check.
-    // The registry address, like the id and the anchorer, should come from
-    // the verifier: a forger who deletes every anchor record also deletes the
-    // only mention of the registry. The CLI supplies the known deployment for
-    // the chain it is pointed at.
-    const registry = options.registry || (anchorEntries.find((e) => e.mode === "registry") || {}).registry;
-    if (!options.registry) {
-      warnings.push(
-        registry
-          ? "registry taken from the log itself: pass the registry address so deleted anchor records are caught"
-          : "no registry given: anchors whose records were deleted from the log cannot be found"
-      );
-    }
-    if (registry) {
-      const { Contract } = require("ethers");
-      const contract = new Contract(registry, REGISTRY_ABI, provider);
-      for (const who of anchorers) {
-        let history;
-        try {
-          history = await readRegistryHistory(contract, logId, who);
-        } catch (error) {
-          results.push({ seq: null, source: "registry", ok: false, reason: "could not read registry: " + (error.shortMessage || error.message) });
-          continue;
-        }
-        for (const a of history) {
-          const listed = anchorEntries.find(
-            (e) => e.mode === "registry" && e.index === a.index && String(e.anchorer).toLowerCase() === who
-          );
-          const row = { seq: listed ? listed.seq : null, source: "registry", index: a.index, anchorer: who, entries: a.entries, ok: false, reason: null };
-          const at = all[a.entries - 1];
-          if (!at) row.reason = "registry says the log had " + a.entries + " entries; it now has " + all.length + " (truncated)";
-          else if (at.hash !== a.head) row.reason = "the log no longer has the anchored head at entry " + (a.entries - 1) + " (rewritten)";
-          else row.reason = timestampProblem(all, a.entries, a.timestamp);
-          if (!row.reason && !listed) {
-            warnings.push("registry anchor #" + a.index + " by " + who + " is not recorded in the log (the anchor record was removed or never written)");
-          }
-          row.ok = row.reason === null;
-          results.push(row);
-        }
-        // An anchor record in the log that the registry has never heard of.
-        for (const e of anchorEntries) {
-          if (e.mode !== "registry" || String(e.anchorer).toLowerCase() !== who) continue;
-          if (!history.some((a) => a.index === e.index && a.head === e.anchoredHead)) {
-            results.push({ seq: e.seq, source: "registry", ok: false, reason: "the log lists anchor #" + e.index + " but the registry does not hold it" });
-          }
-        }
-        // A verifier who pins an anchorer expects that key to have anchored
-        // this log. Finding nothing is a failure, not a footnote.
-        if (history.length === 0 && pinnedAnchorers) {
-          results.push({ seq: null, source: "pin", ok: false, reason: "the registry holds no anchors for this log from " + who });
-        }
-      }
-    }
-
-    // Plain-transaction anchors: only the ones the log still lists.
-    for (const e of anchorEntries) {
-      if (e.mode === "registry") continue;
-      const row = { seq: e.seq, source: "tx", txHash: e.txHash, ok: false, reason: null };
-      try {
-        const tx = await provider.getTransaction(e.txHash);
-        const expected = (ANCHOR_TAG + e.anchoredHead.slice(2)).toLowerCase();
-        const at = all[e.anchoredEntries - 1];
-        if (!tx) row.reason = "transaction not found on this chain";
-        else if (String(tx.data).toLowerCase() !== expected) row.reason = "transaction data does not carry this head";
-        else if (!at || at.hash !== e.anchoredHead) row.reason = "the log no longer has this head at the anchored position (rewritten)";
-        else if (tx.from.toLowerCase() !== String(e.anchorer).toLowerCase()) row.reason = "sent by a different address than recorded";
-        else {
-          const block = tx.blockNumber != null && provider.getBlock ? await provider.getBlock(tx.blockNumber) : null;
-          row.reason = block ? timestampProblem(all, e.anchoredEntries, Number(block.timestamp)) : null;
-        }
-      } catch (error) {
-        row.reason = "could not check: " + (error.shortMessage || error.message);
-      }
-      row.ok = row.reason === null;
-      results.push(row);
-    }
-    if (anchorEntries.some((e) => e.mode !== "registry")) {
-      warnings.push("some anchors are plain transactions: removing their records from the log would not be detected; use a registry");
-    }
-    if (results.length === 0) warnings.push("nothing was anchored: until it is, the whole log can be rewritten undetectably");
-    // A pinned anchorer that no checked anchor came from is a failure, with
-    // or without a registry: the verifier expected that key to vouch for it.
-    for (const who of pinnedAnchorers || []) {
-      const vouched = results.some((r) => r.ok && r.source !== "pin" && (r.anchorer ? String(r.anchorer).toLowerCase() === who : true));
-      const reported = results.some((r) => r.source === "pin" && String(r.reason || "").toLowerCase().includes(who));
-      if (!vouched && !reported) results.push({ seq: null, source: "pin", ok: false, reason: "no valid anchor from the pinned anchorer " + who });
-    }
-
-    return { ok: local.ok && results.every((r) => r.ok), results, warnings, logId, anchorers };
+    return core.verifyChain(entries(), provider, options);
   }
 
   /// The per-anchor rows of verifyChain(), kept for callers of 0.3.0.
@@ -767,7 +522,15 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
     });
   }
 
-  return { file, entries, record, track, lastChange, recordSearch, recordReview, verify, anchor, verifyChain, verifyAnchors };
+  /// The most recent anchor entry, or null. Its `anchoredHead` is the value
+  /// a GermlineGuard expects an agent to claim (contracts/GermlineGuard.sol).
+  function lastAnchor() {
+    const all = entries();
+    for (let i = all.length - 1; i >= 0; i--) if (all[i].kind === "anchor") return all[i];
+    return null;
+  }
+
+  return { file, entries, record, track, lastChange, lastAnchor, recordSearch, recordReview, verify, anchor, verifyChain, verifyAnchors };
 }
 
 module.exports = {

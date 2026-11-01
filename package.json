@@ -15,6 +15,8 @@
     "soc2",
     "change-management",
     "provenance",
+    "ai-agents",
+    "timelock",
     "llm",
     "evaluation",
     "configuration",
@@ -35,8 +37,9 @@
   "scripts": {
     "build": "hardhat compile",
     "test": "hardhat test",
-    "test:sdk": "mocha test/audit.test.js test/storage.test.js test/track.test.js",
+    "test:sdk": "mocha --timeout 20000 test/audit.test.js test/storage.test.js test/track.test.js test/hardening.test.js",
     "bench": "node scripts/benchmark.js",
+    "bench:guard": "hardhat run scripts/bench-guard.js",
     "example:rag": "node examples/prompt-config.js",
     "example:pricing": "node examples/pricing-rules.js",
     "example:judge": "node examples/llm-judge.js",
@@ -47,7 +50,8 @@
     "deploy:botchain": "hardhat run scripts/deploy.js --network botchain",
     "deploy:bohr": "hardhat run scripts/deploy.js --network bohr",
     "deploy:anchor": "hardhat run scripts/deploy-anchor.js --network zerog",
-    "demo": "node scripts/demo.js"
+    "demo": "node scripts/demo.js",
+    "demo:agent": "hardhat run scripts/demo-agent.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
