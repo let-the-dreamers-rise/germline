@@ -99,9 +99,9 @@ No owner, no upgrade path, no admin functions, no external calls, no ether
 handling. Anchors are keyed by `(logId, msg.sender)`, so one sender cannot
 write into another's history, and each key is append-only (`covered` must
 strictly increase). Storage grows by one struct per anchor, paid by the
-anchorer. Reads are paged (`anchorsOf`). Not yet deployed to 0G mainnet;
-`npx hardhat run scripts/deploy-anchor.js --network zerog` deploys it and the
-CLI then finds it from `deployments/zerog-anchor.json`. Not externally audited.
+anchorer. Reads are paged (`anchorsOf`). Deployed on 0G mainnet at
+`0x18713A7ED60576C68B2CfE30D18839521a23cBcd`; the CLI finds it from
+`deployments/zerog-anchor.json`. Not externally audited.
 
 ## Known issues in Germline.sol (deployed at 0xA0448Cd6…7b25)
 

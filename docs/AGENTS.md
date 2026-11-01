@@ -13,7 +13,7 @@ Germline gives an agent a public, tamper-evident config history, and
 In the agent's repository:
 
 ```bash
-npx github:let-the-dreamers-rise/germline init
+npx germline init
 ```
 
 `init` finds prompt and agent files, including ElizaOS characters

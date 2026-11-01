@@ -56,12 +56,12 @@ marked "Partial", never "compliant".
 | GitHub | https://github.com/let-the-dreamers-rise/germline |
 | GermlineAnchor on 0G mainnet | `<<AFTER DEPLOY>>` (`npm run deploy:anchor`, then `deployments/zerog-anchor.json`) |
 | Example anchor tx | `<<AFTER DEPLOY>>` https://chainscan.0g.ai/tx/… |
-| Demo | `npx github:let-the-dreamers-rise/germline demo` (one minute, no wallet) |
+| Demo | `npx germline demo` (one minute, no wallet) |
 | Verifier | `web/verify.html` |
 
 ## Proof, in the order a judge should check it
 
-1. `npx github:let-the-dreamers-rise/germline demo` records three changes,
+1. `npx germline demo` records three changes,
    verifies, edits one line of the log the way an insider would, and shows
    verify catching it.
 2. `npm run test:sdk` runs the SDK and CLI tests. They include the attacks in
