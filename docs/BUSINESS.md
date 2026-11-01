@@ -94,15 +94,15 @@ a feature.
 
 ## What would prove this out
 
-In order, and none of it is done:
+In order. Only the last is done (2026-11-01):
 
 1. Three design partners running the action on a real repository through one
    audit window.
 2. One auditor's written statement that they would accept the evidence pack
    and run the verifier.
 3. One paying hosted-tier customer.
-4. GermlineAnchor deployed on 0G mainnet, with this repository's own log
-   anchored on it and linked from the README.
+4. Done: GermlineAnchor deployed on 0G mainnet (`0x18713A7E…cBcd`), with
+   this repository's own log anchored on it and linked from the README.
 
 ## Search
 

@@ -14,8 +14,8 @@ lets an outsider check.
 
 ```bash
 git clone https://github.com/xai-org/grok-prompts && cd grok-prompts
-npx github:let-the-dreamers-rise/germline init --no-workflow --system grok
-npx github:let-the-dreamers-rise/germline report --out grok-report.md
+npx germline init --no-workflow --system grok
+npx germline report --out grok-report.md
 ```
 
 `init` found the 10 prompt files and backfilled one entry per commit that

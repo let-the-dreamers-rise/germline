@@ -24,7 +24,7 @@ Germline answers both, in three layers:
   set delay while depositors read it and decide whether to stay.
 
 ```bash
-npx github:let-the-dreamers-rise/germline demo     # one minute: record, verify, tamper, get caught
+npx germline demo     # one minute: record, verify, tamper, get caught
 npm run demo:agent                                 # in a clone: the agent timelock on a local chain
 ```
 
@@ -44,7 +44,7 @@ it, and the owner withdraws.
 In the repository that holds your prompts and AI config:
 
 ```bash
-npx github:let-the-dreamers-rise/germline init   # finds prompt/config files, writes the workflow
+npx germline init   # finds prompt/config files, writes the workflow
 git add .germline .github && git commit -m "Track AI config with germline" && git push
 ```
 
@@ -188,7 +188,7 @@ transaction are in [docs/BOTCHAIN-TESTNET.md](docs/BOTCHAIN-TESTNET.md).
 | 0G Storage upload | code path done; first mainnet upload needs a funded key |
 | Hosted anchoring (paid tier): GitHub OIDC or token per log, rate limit, receipt checked against the registry, public pins page | done, tested on a local chain; goes live once the service key is set in Vercel |
 | Release tag | **done**: [v0.4.0](https://github.com/let-the-dreamers-rise/germline/releases/tag/v0.4.0), so `uses: let-the-dreamers-rise/germline@v0.4.0` works |
-| npm package | pending: `npx github:let-the-dreamers-rise/germline` works today |
+| npm package | **done**: [`germline@0.4.0`](https://www.npmjs.com/package/germline) |
 
 ## Repository
 
