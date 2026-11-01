@@ -47,7 +47,8 @@
     "deploy:mainnet": "hardhat run scripts/deploy.js --network zerog",
     "deploy:testnet": "hardhat run scripts/deploy.js --network galileo",
     "deploy:anchor": "hardhat run scripts/deploy-anchor.js --network zerog",
-    "demo": "node scripts/demo.js"
+    "demo": "node scripts/demo.js",
+    "demo:agent": "hardhat run scripts/demo-agent.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

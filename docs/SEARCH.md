@@ -317,7 +317,7 @@ npx hardhat run scripts/verify.js --network zerog
 npx hardhat run scripts/status.js    --network zerog
 ```
 
-Then open `web/index.html` to see the lineage and the fitness climb. It is a
+Then open `web/lineage.html` to see the lineage and the fitness climb. It is a
 single static file with no build step; pass `?address=0x...` or edit the
 config block at the top.
 

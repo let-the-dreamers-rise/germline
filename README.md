@@ -122,6 +122,8 @@ then puts a timelock on it: a vault that holds the agent's funds calls
 while depositors read the change and decide whether to stay.
 [docs/AGENTS.md](docs/AGENTS.md) has the setup and is precise about what the
 guard can and can't prove.
+`npm run demo:agent` plays the whole story on a local chain: an agent trades,
+its operator raises its limit, the guard pauses it, and the owner withdraws.
 
 ## What it is not
 

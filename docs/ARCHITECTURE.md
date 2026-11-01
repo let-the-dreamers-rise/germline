@@ -23,7 +23,7 @@ flowchart TB
   end
 
   AID["Agentic ID\nERC-7857"]
-  VW["web/index.html\nlineage viewer"]
+  VW["web/lineage.html\nlineage viewer"]
   VF["scripts/verify.js\nre-derives heredity"]
 
   EV --> TR

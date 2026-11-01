@@ -44,6 +44,7 @@ jobs:
         with: { node-version: 20, cache: npm }
       - run: npm ci
       - run: npm test
+      - run: PACE=fast npm run demo:agent
   action:
     # Runs the GitHub Action from this checkout against this repository, the
     # way a customer's workflow would, minus the commit back.
