@@ -16,7 +16,7 @@ inputs:
     required: false
     default: ""
   hosted-token:
-    description: Hosted-anchoring token, from a repository secret. Usually not needed. With hosted-url set and `id-token: write` in the workflow's permissions, the run proves its repository to the service with GitHub OIDC.
+    description: "Hosted-anchoring token, from a repository secret. Usually not needed. With hosted-url set and `id-token: write` in the workflow's permissions, the run proves its repository to the service with GitHub OIDC."
     required: false
     default: ""
   hosted-url:
