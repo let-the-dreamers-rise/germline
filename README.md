@@ -135,6 +135,14 @@ protection.
   the change by hash, with the model and request and response hashes. It
   is advice, never an approval, and redacted values are never sent.
 
+## Other chains
+
+The contracts are plain EVM (target `paris`), so the same scripts run on BOT
+Chain (botchain.ai): `--network bohr` for its Bohr testnet (chain 968, faucet
+at faucet.botchain.ai) or `--network botchain` for mainnet (chain 677). The
+lineage registry has run its full lifecycle on Bohr; results and every
+transaction are in [docs/BOTCHAIN-TESTNET.md](docs/BOTCHAIN-TESTNET.md).
+
 ## Status
 
 | | |

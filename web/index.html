@@ -409,12 +409,14 @@
    ========================================================================= */
 window.GERMLINE_CONFIG = {
   address: "0xA0448Cd63f746a60447cfF1817ec9781C25F7b25",
-  network: "zerog", // "zerog" (mainnet, chain 16661) or "galileo" (testnet, chain 16601)
+  network: "zerog", // "zerog" (0G mainnet), "galileo" (0G testnet), "botchain" (BOT Chain mainnet) or "bohr" (BOT Chain testnet)
 };
 
 const NETWORKS = {
   zerog: { chainId: 16661, rpcUrl: "https://evmrpc.0g.ai", explorer: "https://chainscan.0g.ai", label: "0G Mainnet" },
   galileo: { chainId: 16601, rpcUrl: "https://evmrpc-testnet.0g.ai", explorer: "https://chainscan-galileo.0g.ai", label: "0G Galileo Testnet" },
+  botchain: { chainId: 677, rpcUrl: "https://rpc.botchain.ai", explorer: "https://scan.botchain.ai", label: "BOT Chain Mainnet" },
+  bohr: { chainId: 968, rpcUrl: "https://rpc.bohr.life", explorer: "https://scan.bohr.life", label: "BOT Chain Bohr Testnet" },
 };
 const RPC_TIMEOUT_MS = 9000;
 
