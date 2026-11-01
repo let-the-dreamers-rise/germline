@@ -187,17 +187,31 @@ describe("init and track", function () {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), "germline-out-"));
     fs.writeFileSync(path.join(outside, "secret.env"), "SECRET=1");
     const dir = repo(FILES);
-    fs.symlinkSync(path.join(outside, "secret.env"), path.join(dir, "agent.prompt"));
+    // Windows lets only administrators (or Developer Mode) create symbolic
+    // links. Where this account can't, nobody running as it can plant one
+    // either, so the link cases have nothing to defend against; the rest
+    // still run. CI runs them on Linux, macOS and Windows runners.
+    const link = (target, at) => {
+      try {
+        fs.symlinkSync(target, at);
+        return true;
+      } catch (e) {
+        if (e.code === "EPERM" && process.platform === "win32") return false;
+        throw e;
+      }
+    };
+    const linked = link(path.join(outside, "secret.env"), path.join(dir, "agent.prompt"));
     const config = (files) => ({ systems: [{ name: "s", files }] });
     expect(() => trackAll({ cwd: dir, config: config(["../x"]) })).to.throw(/outside the repository/);
     expect(() => trackAll({ cwd: dir, config: config([path.join(outside, "secret.env")]) })).to.throw(/outside/);
-    expect(() => trackAll({ cwd: dir, config: config(["agent.prompt"]) })).to.throw(/symbolic link/);
+    if (linked) expect(() => trackAll({ cwd: dir, config: config(["agent.prompt"]) })).to.throw(/symbolic link/);
     expect(() => trackAll({ cwd: dir, config: config([".git/config"]) })).to.throw(/inside .git/);
     expect(() => trackAll({ cwd: dir, config: config([".GIT/config"]) })).to.throw(/inside .git/);
     fs.mkdirSync(path.join(dir, ".git"));
     fs.writeFileSync(path.join(dir, ".git", "config"), "extraheader = AUTHORIZATION: basic c2VjcmV0");
-    fs.symlinkSync(".git", path.join(dir, "foo"));
-    expect(() => trackAll({ cwd: dir, config: config(["foo/config"]) })).to.throw(/symbolic link/);
+    if (link(".git", path.join(dir, "foo"))) {
+      expect(() => trackAll({ cwd: dir, config: config(["foo/config"]) })).to.throw(/symbolic link/);
+    }
   });
 
   it("records who approved each commit's pull request, from GitHub", async function () {
