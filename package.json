@@ -50,6 +50,7 @@
     "deploy:botchain": "hardhat run scripts/deploy.js --network botchain",
     "deploy:bohr": "hardhat run scripts/deploy.js --network bohr",
     "deploy:anchor": "hardhat run scripts/deploy-anchor.js --network zerog",
+    "deploy:anchor:botchain": "hardhat run scripts/deploy-anchor.js --network botchain",
     "demo": "node scripts/demo.js",
     "demo:agent": "hardhat run scripts/demo-agent.js"
   },
