@@ -23,7 +23,7 @@
 
 const fs = require("fs");
 const { openAuditLog } = require("../sdk/audit");
-const { renderMarkdown, renderJson, renderCsv, renderCc81 } = require("../sdk/report");
+const { renderMarkdown, renderJson, renderCsv, renderCc81, EXPLORERS } = require("../sdk/report");
 const track = require("../sdk/track");
 
 const path = require("path");
@@ -424,6 +424,7 @@ async function main() {
       console.log("  mode:    " + (entry.mode === "registry" ? "registry " + entry.registry + " #" + entry.index : "plain transaction (no registry on this chain; weaker, see docs/AUDIT.md)"));
       console.log("  log id:  " + entry.logId + "  anchorer " + entry.anchorer);
       console.log("  tx:      " + entry.txHash + "  (chain " + entry.chainId + ", block " + entry.block + ")");
+      if (EXPLORERS[entry.chainId]) console.log("  view:    " + EXPLORERS[entry.chainId] + entry.txHash);
       if (entry.storage) {
         console.log("  storage: " + entry.storage.stored + "  " + (entry.storage.storageRoot || entry.storage.uri));
       }
