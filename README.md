@@ -1,6 +1,6 @@
 # Germline
 
-### Change control for AI agents and AI config. Recorded, anchored on 0G, and enforceable on chain.
+### Change control for AI agents and AI config. Recorded, anchored on 0G or BOT Chain, and enforceable on chain.
 
 An AI agent is only as trustworthy as what it's told to do: its system
 prompt, model, tool list and limits. Those change every week, usually with no

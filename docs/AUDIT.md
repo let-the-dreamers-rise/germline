@@ -48,7 +48,7 @@ every push it:
 3. commits the log with `[skip ci]` to the `germline-audit` branch (or the
    same branch, if `log-branch` is empty) and pushes it, rebuilding and
    retrying if someone pushed in between;
-4. only then, if `GERMLINE_ANCHOR_KEY` is set, anchors the pushed head on 0G
+4. only then, if `GERMLINE_ANCHOR_KEY` is set, anchors the pushed head on chain (0G by default; set `GERMLINE_NETWORK` or `GERMLINE_RPC` for BOT Chain)
    and pushes the anchor receipt.
 
 Pushing before anchoring matters: an anchor of entries that never reached the

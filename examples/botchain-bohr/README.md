@@ -13,7 +13,7 @@
 
 ```
 git clone https://github.com/let-the-dreamers-rise/germline && cd germline && npm install
-ZEROG_RPC=https://rpc.bohr.life node bin/germline.js verify \
+GERMLINE_NETWORK=bohr node bin/germline.js verify \
   --log examples/botchain-bohr/audit.jsonl --chain \
   --log-id 0xddf707b6500175ada3646129170aa1562882aca62283b0d8f6919252f122af8c \
   --anchorer 0xA1918A4E578babad074ACf7DCefB152f8FDC8D2E \
@@ -22,7 +22,7 @@ ZEROG_RPC=https://rpc.bohr.life node bin/germline.js verify \
 
 Expected: `ok: 3 entries` and `ok registry anchor #0 (2 entries)`, exit code 0. Change any value in the file and the same command fails with `contents do not match its hash`, exit code 1.
 
-`ZEROG_RPC` is just the RPC the CLI reads; pointing it at BOT Chain is all the chain switch takes.
+`GERMLINE_NETWORK=bohr` points the CLI at the BOT Chain testnet RPC (`botchain` is mainnet, `zerog` is the default). That is all the chain switch takes; `GERMLINE_RPC` names any other EVM RPC.
 
 ## Check it in the browser
 

@@ -91,7 +91,7 @@ first.
   hashes and addresses are shape-checked, and the pack's verification command
   never fills in pins from the file it describes.
 - **Chain and storage availability.** Verification of anchors needs a working
-  0G RPC. The hash chain itself verifies offline.
+  RPC for the chain they are on (0G or BOT Chain). The hash chain itself verifies offline.
 
 ## GermlineAnchor (contracts/GermlineAnchor.sol)
 
@@ -100,8 +100,9 @@ handling. Anchors are keyed by `(logId, msg.sender)`, so one sender cannot
 write into another's history, and each key is append-only (`covered` must
 strictly increase). Storage grows by one struct per anchor, paid by the
 anchorer. Reads are paged (`anchorsOf`). Deployed on 0G mainnet at
-`0x18713A7ED60576C68B2CfE30D18839521a23cBcd`; the CLI finds it from
-`deployments/zerog-anchor.json`. Not externally audited.
+`0x18713A7ED60576C68B2CfE30D18839521a23cBcd` and on BOT Chain Bohr testnet at
+`0xC7a99F46674828aD14592fDaD319212f2ecd446D`; the CLI finds the registry for
+the chain its RPC reports from `deployments/*-anchor.json`. Not externally audited.
 
 ## Known issues in Germline.sol (deployed at 0xA0448Cd6…7b25)
 
