@@ -28,7 +28,11 @@ const track = require("../sdk/track");
 
 const path = require("path");
 
-const DEFAULT_RPC = process.env.ZEROG_RPC || "https://evmrpc.0g.ai";
+// GERMLINE_NETWORK picks a known chain; GERMLINE_RPC (or the older ZEROG_RPC)
+// names any EVM RPC. The registry is then found by the chain id it reports.
+const NETWORK_RPC = { zerog: "https://evmrpc.0g.ai", botchain: "https://rpc.botchain.ai", bohr: "https://rpc.bohr.life" };
+const DEFAULT_RPC =
+  process.env.GERMLINE_RPC || process.env.ZEROG_RPC || NETWORK_RPC[process.env.GERMLINE_NETWORK] || "https://evmrpc.0g.ai";
 
 // The registry to anchor into: --registry, then GERMLINE_REGISTRY, then the
 // address recorded in deployments/ for the chain the RPC reports. Null means
@@ -212,7 +216,8 @@ const HELP = `germline -- a tamper-evident audit trail for AI configuration chan
 
   --log <file>   audit log to use (default .germline/audit.jsonl)
 
-Environment: GERMLINE_ANCHOR_KEY or DEPLOYER_KEY (anchor), ZEROG_RPC (default https://evmrpc.0g.ai),
+Environment: GERMLINE_ANCHOR_KEY or DEPLOYER_KEY (anchor), GERMLINE_RPC or ZEROG_RPC (default https://evmrpc.0g.ai),
+GERMLINE_NETWORK=zerog|botchain|bohr (a known chain),
 GERMLINE_ACTOR (default --actor), GERMLINE_REGISTRY (anchor registry). anchor --upload also publishes the log to
 0G Storage; install @0gfoundation/0g-storage-ts-sdk for that.`;
 
@@ -499,7 +504,7 @@ function friendly(error) {
   const code = error && (error.code || (error.error && error.error.code));
   const text = String((error && (error.shortMessage || error.message)) || error);
   if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|NETWORK_ERROR|failed to detect network|fetch failed/i.test(text + " " + code)) {
-    return "cannot reach the 0G RPC at " + DEFAULT_RPC + ". Check your connection, or set ZEROG_RPC to another endpoint. (" + text.slice(0, 120) + ")";
+    return "cannot reach the RPC at " + DEFAULT_RPC + ". Check your connection, or set GERMLINE_RPC to another endpoint. (" + text.slice(0, 120) + ")";
   }
   if (code === "INSUFFICIENT_FUNDS" || /insufficient funds/i.test(text)) {
     return "the anchor key has no 0G to pay for the transaction. Fund its address and try again.";

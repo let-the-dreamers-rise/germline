@@ -72,7 +72,7 @@
   <h1>Verify an AI change log</h1>
   <p class="lede">
     Drop a Germline <span class="mono">audit.jsonl</span> here to check that no entry was edited, removed or reordered,
-    and optionally that it matches what was anchored on 0G Chain. Everything runs in this page; the file never leaves your machine.
+    and optionally that it matches what was anchored on chain (0G or BOT Chain). Everything runs in this page; the file never leaves your machine.
   </p>
 
   <div class="panel">
@@ -97,9 +97,15 @@
         <input type="text" id="registry" placeholder="0x… (GermlineAnchor)" spellcheck="false" />
       </div>
     </div>
-    <label for="rpc">0G RPC</label>
+    <label for="network">Chain</label>
+    <select id="network">
+      <option value="https://evmrpc.0g.ai">0G mainnet</option>
+      <option value="https://rpc.botchain.ai">BOT Chain mainnet</option>
+      <option value="https://rpc.bohr.life">BOT Chain Bohr testnet</option>
+    </select>
+    <label for="rpc">RPC</label>
     <input type="text" id="rpc" value="https://evmrpc.0g.ai" spellcheck="false" />
-    <button id="chainBtn" disabled>Check against 0G Chain</button>
+    <button id="chainBtn" disabled>Check against the chain</button>
   </div>
 
   <div id="out"></div>
@@ -158,8 +164,8 @@ function render(entries, chain) {
   }
   const anchors = entries.filter((e) => e.kind === "anchor");
   if (chain) panel.append(chain);
-  else if (!anchors.length) panel.append(verdict("warn", "Never anchored", "Until it is anchored on 0G, whoever holds this file could rewrite all of it consistently."));
-  else panel.append(verdict("warn", "Anchors not checked yet", anchors.length + " anchor record(s) in the file. Fill in the pins and check against 0G Chain."));
+  else if (!anchors.length) panel.append(verdict("warn", "Never anchored", "Until it is anchored on chain, whoever holds this file could rewrite all of it consistently."));
+  else panel.append(verdict("warn", "Anchors not checked yet", anchors.length + " anchor record(s) in the file. Fill in the pins and check against the chain."));
   panel.append(el("div", { class: "muted mono", style: "margin-top:10px" }, "log id (from the file) " + (check.logId || "-")));
   panel.append(el("div", { class: "muted mono" }, "head " + check.head));
   out.append(panel);
@@ -208,13 +214,13 @@ async function checkChain() {
     const failed = rows.filter((r) => !r.ok).length;
     const anchors = rows.filter((r) => r.source !== "pin").length;
     render(current, failed || !anchors
-      ? verdict("fail", "Does NOT match 0G Chain", (failed || 1) + " of " + Math.max(rows.length, 1) + " check(s) failed", notes.length ? notes : ["nothing was anchored"])
-      : verdict("ok", "Matches 0G Chain", anchors + " anchor(s) from " + anchorer + " all agree with this file", notes));
+      ? verdict("fail", "Does NOT match the chain", (failed || 1) + " of " + Math.max(rows.length, 1) + " check(s) failed", notes.length ? notes : ["nothing was anchored"])
+      : verdict("ok", "Matches the chain", anchors + " anchor(s) from " + anchorer + " all agree with this file", notes));
   } catch (err) {
-    render(current, verdict("fail", "Could not read 0G Chain", String(err.shortMessage || err.message || err).slice(0, 200)));
+    render(current, verdict("fail", "Could not read the chain", String(err.shortMessage || err.message || err).slice(0, 200)));
   } finally {
     btn.disabled = false;
-    btn.textContent = "Check against 0G Chain";
+    btn.textContent = "Check against the chain";
   }
 }
 
@@ -236,6 +242,8 @@ drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.ad
 drop.addEventListener("dragleave", () => drop.classList.remove("over"));
 drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && load(e.dataTransfer.files[0]); });
 document.getElementById("chainBtn").addEventListener("click", checkChain);
+const networkSel = document.getElementById("network");
+networkSel.addEventListener("change", () => { document.getElementById("rpc").value = networkSel.value; });
 
 // One-click verification of a published log: verify.html?log=<url of audit.jsonl>
 // &logId=..&anchorer=..&registry=..[&rpc=..]. The log is fetched, then
@@ -243,6 +251,10 @@ document.getElementById("chainBtn").addEventListener("click", checkChain);
 (function fromLink() {
   const q = new URLSearchParams(location.search);
   for (const k of ["logId", "anchorer", "registry", "rpc"]) if (q.get(k)) document.getElementById(k).value = q.get(k);
+  const presets = { zerog: "https://evmrpc.0g.ai", botchain: "https://rpc.botchain.ai", bohr: "https://rpc.bohr.life" };
+  if (!q.get("rpc") && presets[q.get("network")]) document.getElementById("rpc").value = presets[q.get("network")];
+  const rpcNow = document.getElementById("rpc").value;
+  for (const o of networkSel.options) if (o.value === rpcNow) networkSel.value = rpcNow;
   const url = q.get("log");
   if (!url || !/^https:\/\//.test(url)) return;
   out.replaceChildren(el("div", { class: "panel muted" }, "Fetching " + url + " …"));
