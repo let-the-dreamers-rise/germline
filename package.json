@@ -28,6 +28,7 @@
     "engine/",
     "lib/",
     "contracts/",
+    "deployments/*-anchor.json",
     "README.md",
     "LICENSE",
     "docs/",

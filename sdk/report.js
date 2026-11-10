@@ -24,6 +24,18 @@ const EXPLORERS = {
   16601: "https://chainscan-galileo.0g.ai/tx/",
   8453: "https://basescan.org/tx/",
   84532: "https://sepolia.basescan.org/tx/",
+  677: "https://scan.botchain.ai/tx/",
+  968: "https://scan.bohr.life/tx/",
+};
+
+// Display names for the chains above.
+const CHAIN_NAMES = {
+  16661: "0G Chain",
+  16601: "0G Galileo testnet",
+  8453: "Base",
+  84532: "Base Sepolia",
+  677: "BOT Chain",
+  968: "BOT Chain Bohr testnet",
 };
 
 const HASH = /^0x[0-9a-fA-F]{64}$/;
@@ -200,7 +212,9 @@ function renderMarkdown(entries, options = {}) {
     const last = anchors[anchors.length - 1];
     const covered = Number(last.anchoredEntries) || 0;
     const chains = Array.from(new Set(anchors.map((a) => a.chainId)));
-    const where = chains.every((id) => EXPLORERS[id]) ? "0G Chain" : "chain " + chains.map(cell).join(", ");
+    const where = chains.every((id) => CHAIN_NAMES[id])
+      ? Array.from(new Set(chains.map((id) => CHAIN_NAMES[id]))).join(", ")
+      : "chain " + chains.map(cell).join(", ");
     const registry = anchors.some((a) => a.mode === "registry");
     lines.push(
       "Anchored " + anchors.length + " time(s) on " + where + (registry ? " in the GermlineAnchor registry" : " as plain transactions") +
@@ -451,4 +465,4 @@ function renderCc81(entries) {
   return [header.map(csvCell).join(",")].concat(rows.map((row) => row.map(csvCell).join(","))).join("\n") + "\n";
 }
 
-module.exports = { renderMarkdown, renderJson, renderCsv, renderCc81, controls, escape };
+module.exports = { renderMarkdown, renderJson, renderCsv, renderCc81, controls, escape, EXPLORERS, CHAIN_NAMES };
