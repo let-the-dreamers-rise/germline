@@ -234,7 +234,7 @@
     <details><summary>Does it log what the model said?</summary><div class="a"><p>No. LangSmith and Langfuse record inference traffic. Germline records what the model was configured to do, and makes that record impossible to quietly rewrite.</p></div></details>
     <details><summary>Does it authenticate commit authors?</summary><div class="a"><p>No. Git lets anyone write any name. The approval comes from GitHub’s API and is authenticated; the author line is only what git says. Signed entries are on the roadmap.</p></div></details>
     <details><summary>What do I need to start?</summary><div class="a"><p>Run <code>init</code> in the repository that holds your prompts and config, then commit and push. To anchor on 0G, add a funded 0G key as the secret <code>GERMLINE_ANCHOR_KEY</code>. Until then the log is still recorded and verified on every push.</p></div></details>
-    <details><summary>Does it run on BOT Chain?</summary><div class="a"><p>Yes. The anchor-only flow needs only an EVM RPC and a funded key, with no 0G Storage or Compute. It is verified on <a href="https://botchain.ai">BOT Chain</a>'s Bohr testnet (<a href="https://github.com/let-the-dreamers-rise/germline/blob/main/examples/botchain-bohr/README.md">anchor and steps</a>). Set <code>GERMLINE_NETWORK=botchain</code> to anchor on BOT Chain mainnet, and check any anchor on <a href="https://scan.botchain.ai">scan.botchain.ai</a> or in the <a href="verify.html?network=botchain">verifier</a>.</p></div></details>
+    <details><summary>Does it run on BOT Chain?</summary><div class="a"><p>Yes. The anchor-only flow needs only an EVM RPC and a funded key, with no 0G Storage or Compute. GermlineAnchor is live on <a href="https://botchain.ai">BOT Chain</a> mainnet at <a href="https://scan.botchain.ai/address/0xA0448Cd63f746a60447cfF1817ec9781C25F7b25">0xA0448Cd6…7b25</a>. Anchor from your own wallet in the <a href="anchor.html">anchor app</a>, or from the CLI with <code>GERMLINE_NETWORK=botchain</code>, and check any anchor on <a href="https://scan.botchain.ai">scan.botchain.ai</a> or in the <a href="verify.html?network=botchain">verifier</a>.</p></div></details>
     <details><summary>Is it live on 0G mainnet?</summary><div class="a"><p>Not yet. The anchor registry and the guard are tested on a local chain. Mainnet deployment needs a funded key, and <code>npm run deploy:anchor</code> does it.</p></div></details>
   </div>
 </section>
@@ -250,6 +250,7 @@
   <div class="cta-row center" data-rise>
     <a class="btn" href="https://github.com/let-the-dreamers-rise/germline">Star on GitHub</a>
     <a class="btn ghost" href="https://github.com/let-the-dreamers-rise/germline#readme">Run the one-minute demo</a>
+    <a class="btn ghost" href="anchor.html">Anchor on BOT Chain with your wallet</a>
     <a class="btn ghost" href="verify.html">Verify a log in your browser</a>
   </div>
 </section>
@@ -261,6 +262,7 @@
     <p class="brand"><span class="brand-mark" aria-hidden="true"></span>Germline</p>
     <nav aria-label="Footer">
       <a href="https://github.com/let-the-dreamers-rise/germline">GitHub</a>
+      <a href="anchor.html">Anchor app</a>
       <a href="verify.html">Verifier</a>
       <a href="https://github.com/let-the-dreamers-rise/germline/blob/main/docs/AGENTS.md">Agent guide</a>
       <a href="https://github.com/let-the-dreamers-rise/germline/blob/main/docs/CASE-STUDY-GROK.md">Grok case study</a>

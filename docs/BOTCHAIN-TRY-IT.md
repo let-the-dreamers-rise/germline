@@ -5,7 +5,19 @@ settings (model, prompt, parameters) and anchors it on BOT Chain. Each anchor
 is one BOT Chain transaction from your own wallet. Anyone can check it later,
 with no account and no key.
 
-## You need
+## Easiest: the web app (2 minutes, no install)
+
+1. Open https://germline.vercel.app/anchor.html in a browser with MetaMask (or any EVM wallet).
+2. Click **Connect wallet**. It adds BOT Chain mainnet (chain 677) to your wallet if needed.
+3. **Record change** with the example config (or your own agent's config), then **Anchor now** and confirm in your wallet.
+4. Change one value in the config (say, the temperature), record again and anchor again. That is your second transaction.
+5. Click **Verify against the chain**, then **Download audit.jsonl** to keep your log.
+
+Each anchor shows a link to its transaction on https://scan.botchain.ai. One anchor uses about 95,000 gas, so 0.005 BOT covers a few.
+
+## From the command line
+
+### You need
 
 - Node.js 18 or newer.
 - A wallet with a little BOT on BOT Chain mainnet (chain 677). One anchor uses
@@ -13,7 +25,7 @@ with no account and no key.
 - That wallet's private key in an environment variable. Use a fresh wallet that
   holds only this small amount, not your main wallet.
 
-## Steps
+### Steps
 
 macOS or Linux:
 
