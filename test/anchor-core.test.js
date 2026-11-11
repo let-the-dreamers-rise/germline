@@ -51,6 +51,15 @@ describe("browser log writer", function () {
     expect(out).to.match(/^ok: 3 entries/);
   });
 
+  it("records commit fields the way germline track does", function () {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "germline-web-")), "audit.jsonl");
+    const log = openAuditLog(file, { clock: () => TS[0] });
+    log.record({ system: "agent", actor: "a@b.c", after: { m: 1 }, reason: "tune", commit: "abc123", committedAt: "2026-11-01T00:00:00Z" });
+    const web = [write.change([], { system: "agent", actor: "a@b.c", after: { m: 1 }, reason: "tune", commit: "abc123", committedAt: "2026-11-01T00:00:00Z", ts: TS[0] })];
+    expect(write.serialize(web)).to.equal(fs.readFileSync(file, "utf8"));
+    expect(Array.from(write.recordedCommits(web))).to.deep.equal(["abc123"]);
+  });
+
   it("refuses to append to a log that does not verify", function () {
     const web = [write.change([], { system: "a", actor: "b", after: { x: 1 } })];
     web[0].after = { x: 2 };

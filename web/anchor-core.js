@@ -76,7 +76,7 @@
     return undefined;
   }
 
-  function change(existing, { system, actor, reason, after, ts }) {
+  function change(existing, { system, actor, reason, after, ts, commit, committedAt }) {
     if (!system || typeof system !== "string") throw new TypeError("a change needs a system name");
     if (!actor || typeof actor !== "string") throw new TypeError("a change needs an actor: who made it");
     if (after === undefined) throw new TypeError("a change needs the config after it");
@@ -89,8 +89,8 @@
         actor,
         reason: reason || null,
         ticket: null,
-        commit: null,
-        committedAt: null,
+        commit: commit || null,
+        committedAt: committedAt || null,
         recordedBy: null,
         beforeRoot: before !== undefined ? core.configRootOf(before) : null,
         configRoot: core.configRootOf(after),
@@ -128,5 +128,10 @@
     return entries.map((e) => JSON.stringify(e)).join("\n") + (entries.length ? "\n" : "");
   }
 
-  return { change, anchor, serialize, lastConfig, diff };
+  /// Commits already in the log, so a sync never records one twice.
+  function recordedCommits(existing) {
+    return new Set(existing.filter((e) => e.kind === "change" && e.commit).map((e) => e.commit));
+  }
+
+  return { change, anchor, serialize, lastConfig, diff, recordedCommits };
 });
