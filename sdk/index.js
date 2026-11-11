@@ -86,6 +86,7 @@ const { canonical, rootOf, evidenceRootOf, stableStringify } = require("./canoni
 const { localSeed } = require("./seed");
 const { openAuditLog, verifyEntries, diff } = require("./audit");
 const { renderMarkdown } = require("./report");
+const { watchAgent, configOfRequest } = require("./agent");
 
 module.exports = {
   // The audit trail: record a config change, verify the log, anchor it on
@@ -94,6 +95,11 @@ module.exports = {
   verifyEntries,
   diff,
   renderMarkdown,
+
+  // Inside a running agent: record each runtime config change as it takes
+  // effect and anchor the log from the agent's own key.
+  watchAgent,
+  configOfRequest,
 
   // The two calls almost every search integration needs.
   defineTrial,
