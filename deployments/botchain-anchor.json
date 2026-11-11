@@ -1,0 +1,9 @@
+{
+  "network": "botchain",
+  "chainId": 677,
+  "address": "0xA0448Cd63f746a60447cfF1817ec9781C25F7b25",
+  "deployTx": "0xa76061297162f41b9f516a7139e9727e19b3bec927fbc8933919b02f205399ad",
+  "block": 29921453,
+  "deployer": "0xA1918A4E578babad074ACf7DCefB152f8FDC8D2E",
+  "deployedAt": "2026-11-11T19:32:12.809Z"
+}
