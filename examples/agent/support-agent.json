@@ -1,6 +1,6 @@
 {
   "model": "gpt-4o-mini",
-  "temperature": 0.7,
-  "system": "You are a support agent for Acme. Answer questions about orders.",
+  "temperature": 0.2,
+  "system": "You are a support agent for Acme. Answer questions about orders. Cite the order policy and never promise a refund.",
   "tools": { "refunds": false, "order_lookup": true }
 }
