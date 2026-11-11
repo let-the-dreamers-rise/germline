@@ -9,8 +9,8 @@ with no account and no key.
 
 1. Open https://germline.vercel.app/anchor.html in a browser with MetaMask (or any EVM wallet).
 2. Click **Connect wallet**. It adds BOT Chain mainnet (chain 677) to your wallet if needed.
-3. **Record change** with the example config (or your own agent's config), then **Anchor now** and confirm in your wallet.
-4. Change one value in the config (say, the temperature), record again and anchor again. That is your second transaction.
+3. That's it: the app reads the config file's commit history from GitHub, records every change automatically (who committed it and why), and asks your wallet to confirm the anchor. Point it at your own agent's repo and config file to audit your own agent; the default is a demo agent config.
+4. Leave the page open with **Auto-anchor** on and every new commit to the file is recorded and anchored as it lands. To get a second transaction now, record a change by hand (under "Or record a change by hand") and anchor again.
 5. Click **Verify against the chain**, then **Download audit.jsonl** to keep your log.
 
 Each anchor shows a link to its transaction on https://scan.botchain.ai. One anchor uses about 95,000 gas, so 0.005 BOT covers a few.
