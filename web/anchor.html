@@ -57,9 +57,9 @@
 <main>
   <h1>Anchor an AI config change</h1>
   <p class="lede">
-    Record a change to an AI agent's settings and anchor it on BOT Chain from your own wallet. Each anchor is one
-    transaction into GermlineAnchor, a registry with no owner, admin or upgrade path. Your log stays in this browser
-    until you download it; only its hash goes on chain.
+    Point Germline at the file where your AI agent's config lives on GitHub. Every commit that changed it is recorded
+    automatically, with who made it and why, and anchored on BOT Chain from your own wallet. Leave the page open with
+    auto-anchor on and new changes are picked up as they land. Only the log's hash goes on chain.
   </p>
 
   <div class="panel">
@@ -82,8 +82,16 @@
   </div>
 
   <div class="panel">
-    <h2><span class="step">2</span>Record a change</h2>
-    <div class="muted">Paste your agent's config as JSON. Germline compares it with the last config you recorded for the same system and logs what moved.</div>
+    <h2><span class="step">2</span>Connect your agent's config</h2>
+    <div class="muted">A public GitHub repo and the config file inside it (JSON, or any text file such as a prompt). Germline reads the file's commit history and records each change: what moved, who committed it, and the commit message as the reason.</div>
+    <div class="row">
+      <div><label for="repo">GitHub repo</label><input type="text" id="repo" value="let-the-dreamers-rise/germline" spellcheck="false" placeholder="owner/repo" /></div>
+      <div><label for="path">Config file</label><input type="text" id="path" value="examples/agent/support-agent.json" spellcheck="false" /></div>
+    </div>
+    <label style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);margin-top:14px"><input type="checkbox" id="watch" checked /> Auto-anchor: check every minute while this page is open and anchor new changes</label>
+    <button id="sync" disabled>Sync changes</button>
+    <div id="syncMsg"></div>
+    <details style="margin-top:16px"><summary class="muted" style="cursor:pointer">Or record a change by hand</summary>
     <div class="row">
       <div><label for="system">System</label><input type="text" id="system" value="support-agent" spellcheck="false" /></div>
       <div><label for="actor">Changed by</label><input type="text" id="actor" placeholder="your name" spellcheck="false" /></div>
@@ -94,6 +102,7 @@
     <textarea id="config" spellcheck="false">{"model":"gpt-4o-mini","temperature":0.2,"system":"You are a support agent."}</textarea>
     <button id="record">Record change</button>
     <div id="recordMsg"></div>
+    </details>
   </div>
 
   <div class="panel">
@@ -112,6 +121,24 @@
     <button id="import" class="ghost">Load an audit.jsonl</button>
     <button id="clear" class="ghost">Start a new log</button>
     <input type="file" id="file" accept=".jsonl,.json,.txt" class="hidden" />
+  </div>
+
+  <div class="panel">
+    <h2>Fully automatic, with no browser open</h2>
+    <div class="muted">The same thing runs in your repo's CI: on every merge that touches the config, the Germline GitHub Action records the change and anchors it on BOT Chain. Add a funded key as the <span class="mono">GERMLINE_ANCHOR_KEY</span> secret and this workflow:</div>
+<pre class="mono" style="white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-top:10px">on: { push: { branches: [main] } }
+concurrency: germline
+permissions: { contents: write }
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: let-the-dreamers-rise/germline@main
+        with:
+          anchor-key: ${{ secrets.GERMLINE_ANCHOR_KEY }}
+          rpc: https://rpc.botchain.ai</pre>
   </div>
 
   <footer>
@@ -177,6 +204,7 @@ function render() {
   $("verify").disabled = !(entries.length && entries.some((e) => e.kind === "anchor"));
   $("download").disabled = !entries.length;
   $("record").disabled = !account;
+  $("sync").disabled = !account;
   if (!chain().registry) show("anchorMsg", "warn", "The GermlineAnchor registry for " + esc(chain().name) + " is not set in this page yet.");
 }
 
@@ -216,9 +244,79 @@ async function connect() {
     load();
     render();
     show("connectMsg", "ok", "Connected to " + esc(chain().name) + ".");
+    if ($("watch").checked) setWatch(); else sync(false);
   } catch (e) {
     show("connectMsg", "fail", walletError(e));
   }
+}
+
+const GH = "https://api.github.com/repos/";
+const RAW = "https://raw.githubusercontent.com/";
+let syncing = false;
+
+function parseRepo(v) {
+  const m = String(v).trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/$/, "").match(/^([\w.-]+)\/([\w.-]+)$/);
+  if (!m) throw new Error("repo must look like owner/repo");
+  return m[1] + "/" + m[2];
+}
+
+// A JSON file is recorded as its value; anything else (a prompt in .md or
+// .txt) as { file: contents }, the way germline track records text files.
+function configOf(path, text) {
+  if (/\.json$/i.test(path)) { try { return JSON.parse(text); } catch (e) {} }
+  return { [path]: text };
+}
+
+async function sync(auto) {
+  if (syncing) return 0;
+  syncing = true;
+  try {
+    const repo = parseRepo($("repo").value);
+    const path = $("path").value.trim().replace(/^\/+/, "");
+    if (!path) throw new Error("name the config file");
+    if (!auto) show("syncMsg", "warn", "Reading the history of " + esc(path) + "…");
+    const r = await fetch(GH + repo + "/commits?per_page=100&path=" + encodeURIComponent(path));
+    if (r.status === 403) throw new Error("GitHub's rate limit for this browser is used up for the hour; try again later");
+    if (!r.ok) throw new Error("GitHub could not find " + repo + " (it must be public)");
+    const commits = (await r.json()).reverse();
+    if (!commits.length) throw new Error("no commits touch " + path + " in " + repo);
+    const seen = GermlineWrite.recordedCommits(entries);
+    const system = repo + ":" + path;
+    let added = 0;
+    for (const c of commits) {
+      if (seen.has(c.sha)) continue;
+      const f = await fetch(RAW + repo + "/" + c.sha + "/" + path.split("/").map(encodeURIComponent).join("/"));
+      if (!f.ok) continue; // the file was deleted in this commit
+      const after = configOf(path, await f.text());
+      const entry = GermlineWrite.change(entries, {
+        system,
+        actor: (c.author && c.author.login) || (c.commit.author && (c.commit.author.email || c.commit.author.name)) || "unknown",
+        reason: (c.commit.message || "").split("\n")[0] || null,
+        after,
+        commit: c.sha,
+        committedAt: c.commit.committer && c.commit.committer.date,
+      });
+      if (entry.changes.length) { entries.push(entry); added++; }
+    }
+    save();
+    render();
+    const last = entries[entries.length - 1];
+    if (added) show("syncMsg", "ok", "Recorded " + added + " change" + (added === 1 ? "" : "s") + " from " + esc(repo) + "." + ($("watch").checked ? "" : " Anchor them in step 3."));
+    else if (!auto) show("syncMsg", "ok", "Up to date: every commit to " + esc(path) + " is already recorded.");
+    if ($("watch").checked && last && last.kind !== "anchor" && chain().registry) await anchor();
+    return added;
+  } catch (e) {
+    show("syncMsg", "fail", esc(e.message));
+    return 0;
+  } finally {
+    syncing = false;
+  }
+}
+
+let timer = null;
+function setWatch() {
+  if (timer) { clearInterval(timer); timer = null; }
+  if ($("watch").checked && account) { sync(false); timer = setInterval(() => sync(true), 60000); }
 }
 
 function record() {
@@ -290,6 +388,8 @@ function download() {
 
 $("connect").onclick = connect;
 $("record").onclick = record;
+$("sync").onclick = () => sync(false);
+$("watch").onchange = setWatch;
 $("anchor").onclick = anchor;
 $("verify").onclick = verify;
 $("download").onclick = download;
