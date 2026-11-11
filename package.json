@@ -38,7 +38,7 @@
   "scripts": {
     "build": "hardhat compile",
     "test": "hardhat test",
-    "test:sdk": "mocha --timeout 20000 test/audit.test.js test/storage.test.js test/track.test.js test/hardening.test.js test/anchor-core.test.js",
+    "test:sdk": "mocha --timeout 20000 test/audit.test.js test/storage.test.js test/track.test.js test/hardening.test.js test/anchor-core.test.js test/agent.test.js",
     "bench": "node scripts/benchmark.js",
     "bench:guard": "hardhat run scripts/bench-guard.js",
     "example:rag": "node examples/prompt-config.js",

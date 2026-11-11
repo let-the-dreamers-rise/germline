@@ -30,6 +30,22 @@ npm run demo:agent                                 # in a clone: the agent timel
 
 ## For on-chain AI agents
 
+An agent's config changes while it runs: an operator raises a limit, the agent
+falls back to another model, a tool call rewrites its prompt. `watchAgent`
+records each change the moment it takes effect and anchors the log from the
+agent's own wallet, with nobody pressing a button:
+
+```js
+const { watchAgent } = require("germline");
+const audit = watchAgent({ system: "support-agent", signer: agentWallet }); // e.g. on BOT Chain
+const create = audit.wrap((params) => openai.chat.completions.create(params));
+await create({ model, temperature, messages, tools }); // a changed model, prompt, sampling or tool list is recorded first
+```
+
+Changes are recorded before the call they govern and anchored in batches
+(within a minute, or after 10 changes). `node examples/agent-runtime.js` runs
+it end to end; [docs/AGENT-RUNTIME.md](docs/AGENT-RUNTIME.md) has the options.
+
 `init` picks up ElizaOS characters, `SOUL.md` and `mcp.json` tool lists along
 with ordinary prompt and config files. `contracts/GermlineGuard.sol` and the
 `onlySettledConfig(head)` modifier gate any function on a settled config, and
