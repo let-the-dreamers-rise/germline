@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Germline anchor app</title>
+<title>Germline agent audit</title>
 <meta name="description" content="Record a change to an AI agent's config and anchor it on BOT Chain from your own wallet. Anyone can verify it afterwards." />
 <style>
   :root {
@@ -55,12 +55,12 @@
 </head>
 <body>
 <main>
-  <h1>Anchor an AI config change</h1>
+  <h1>Audit a running AI agent on BOT Chain</h1>
   <p class="lede">
-    A running agent records its own config changes and anchors them from its own wallet with
-    <a href="https://github.com/let-the-dreamers-rise/germline/blob/main/docs/AGENT-RUNTIME.md">watchAgent</a>, no human involved.
-    This page is the same flow from your wallet: point it at a config file on GitHub and every change is recorded
-    automatically and anchored on BOT Chain, then verify any log against the chain. Only the log's hash goes on chain.
+    An agent's config changes while it runs: an operator raises a limit, the agent falls back to another model, a tool
+    is switched on. Germline records each change the instant it takes effect and anchors the log on BOT Chain, where
+    anyone can check it. Try it below with a live demo agent; in production the agent does this itself with
+    <a href="https://github.com/let-the-dreamers-rise/germline/blob/main/docs/AGENT-RUNTIME.md">watchAgent</a>, from its own wallet, with nobody involved.
   </p>
 
   <div class="panel">
@@ -83,27 +83,23 @@
   </div>
 
   <div class="panel">
-    <h2><span class="step">2</span>Connect your agent's config</h2>
-    <div class="muted">A public GitHub repo and the config file inside it (JSON, or any text file such as a prompt). Germline reads the file's commit history and records each change: what moved, who committed it, and the commit message as the reason.</div>
+    <h2><span class="step">2</span>Run the agent and change it</h2>
+    <div class="muted">A demo support agent runs in this page. Change its settings as its operator would, or let it fall back to another model. Each change is recorded the moment it takes effect, before the agent's next answer. Nothing to type into a log.</div>
     <div class="row">
-      <div><label for="repo">GitHub repo</label><input type="text" id="repo" value="let-the-dreamers-rise/germline" spellcheck="false" placeholder="owner/repo" /></div>
-      <div><label for="path">Config file</label><input type="text" id="path" value="examples/agent/support-agent.json" spellcheck="false" /></div>
+      <div><label for="lModel">Model</label><select id="lModel"><option>gpt-4o-mini</option><option>gpt-4.1-mini</option><option>claude-haiku</option><option>llama-3.1-70b</option></select></div>
+      <div><label for="lTemp">Temperature <span id="lTempV" class="mono">0.2</span></label><input type="range" id="lTemp" min="0" max="1" step="0.1" value="0.2" style="width:100%" /></div>
     </div>
-    <label style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);margin-top:14px"><input type="checkbox" id="watch" checked /> Auto-anchor: check every minute while this page is open and anchor new changes</label>
-    <button id="sync" disabled>Sync changes</button>
-    <div id="syncMsg"></div>
-    <details style="margin-top:16px"><summary class="muted" style="cursor:pointer">Or record a change by hand</summary>
     <div class="row">
-      <div><label for="system">System</label><input type="text" id="system" value="support-agent" spellcheck="false" /></div>
-      <div><label for="actor">Changed by</label><input type="text" id="actor" placeholder="your name" spellcheck="false" /></div>
+      <div><label>Tools</label>
+        <div style="font-size:14px;padding-top:4px"><span><input type="checkbox" id="lLookup" checked /> order_lookup</span> &nbsp; <span><input type="checkbox" id="lRefunds" /> refunds</span></div></div>
+      <div><label for="lLimit">Refund limit (USD)</label><input type="text" id="lLimit" value="0" spellcheck="false" /></div>
     </div>
-    <label for="reason">Reason</label>
-    <input type="text" id="reason" placeholder="why it changed" />
-    <label for="config">Config after the change (JSON)</label>
-    <textarea id="config" spellcheck="false">{"model":"gpt-4o-mini","temperature":0.2,"system":"You are a support agent."}</textarea>
-    <button id="record">Record change</button>
-    <div id="recordMsg"></div>
-    </details>
+    <label for="lPrompt">System prompt</label>
+    <textarea id="lPrompt" spellcheck="false" style="min-height:70px">You are a support agent for Acme. Answer questions about orders. Never promise a refund.</textarea>
+    <button id="lAsk" disabled>Ask the agent something</button>
+    <button id="lFallback" class="ghost" disabled>Simulate a model fallback</button>
+    <div style="font-size:14px;margin-top:14px"><input type="checkbox" id="lAuto" checked /> Anchor automatically, 15 seconds after a change, batched (your wallet confirms)</div>
+    <div id="liveMsg"></div>
   </div>
 
   <div class="panel">
@@ -125,6 +121,41 @@
   </div>
 
   <div class="panel">
+    <h2>Watch an agent on BOT Chain</h2>
+    <div class="muted">Paste any agent's wallet address to see every anchor it has made in the GermlineAnchor registry. Each one pins the log's head at that moment; a log edited afterwards no longer matches it.</div>
+    <label for="wAddr">Agent wallet</label>
+    <input type="text" id="wAddr" placeholder="0x…" spellcheck="false" />
+    <button id="wGo" class="ghost">Show its anchors</button>
+    <div id="wMsg"></div>
+    <div class="table"><table><thead><tr><th>Block</th><th>Log ID</th><th>Entries</th><th>Transaction</th></tr></thead><tbody id="wRows"></tbody></table></div>
+  </div>
+
+  <details class="panel"><summary style="cursor:pointer"><strong>Also covers config committed to a repo</strong> <span class="muted">(GitHub history, CI, or by hand)</span></summary>
+  <div>
+    <h2 style="margin-top:14px">From a file's GitHub history</h2>
+    <div class="muted">A public GitHub repo and the config file inside it (JSON, or any text file such as a prompt). Germline reads the file's commit history and records each change: what moved, who committed it, and the commit message as the reason.</div>
+    <div class="row">
+      <div><label for="repo">GitHub repo</label><input type="text" id="repo" value="let-the-dreamers-rise/germline" spellcheck="false" placeholder="owner/repo" /></div>
+      <div><label for="path">Config file</label><input type="text" id="path" value="examples/agent/support-agent.json" spellcheck="false" /></div>
+    </div>
+    <label style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);margin-top:14px"><input type="checkbox" id="watch" /> Auto-anchor: check every minute while this page is open and anchor new changes</label>
+    <button id="sync" disabled>Sync changes</button>
+    <div id="syncMsg"></div>
+    <details style="margin-top:16px"><summary class="muted" style="cursor:pointer">Or record a change by hand</summary>
+    <div class="row">
+      <div><label for="system">System</label><input type="text" id="system" value="support-agent" spellcheck="false" /></div>
+      <div><label for="actor">Changed by</label><input type="text" id="actor" placeholder="your name" spellcheck="false" /></div>
+    </div>
+    <label for="reason">Reason</label>
+    <input type="text" id="reason" placeholder="why it changed" />
+    <label for="config">Config after the change (JSON)</label>
+    <textarea id="config" spellcheck="false">{"model":"gpt-4o-mini","temperature":0.2,"system":"You are a support agent."}</textarea>
+    <button id="record">Record change</button>
+    <div id="recordMsg"></div>
+    </details>
+  </div>
+
+  <div>
     <h2>Fully automatic, with no browser open</h2>
     <div class="muted">The same thing runs in your repo's CI: on every merge that touches the config, the Germline GitHub Action records the change and anchors it on BOT Chain. Add a funded key as the <span class="mono">GERMLINE_ANCHOR_KEY</span> secret and this workflow:</div>
 <pre class="mono" style="white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-top:10px">on: { push: { branches: [main] } }
@@ -142,6 +173,8 @@ jobs:
           rpc: https://rpc.botchain.ai</pre>
   </div>
 
+  </details>
+
   <footer>
     Same log format as <span class="mono">npx germline</span>: the CLI and the <a href="verify.html">verifier</a> read what this page writes.
     <a href="https://github.com/let-the-dreamers-rise/germline">Source</a> (MIT).
@@ -155,8 +188,8 @@ jobs:
 <script>
 "use strict";
 const CHAINS = {
-  677: { name: "BOT Chain", rpc: "https://rpc.botchain.ai", explorer: "https://scan.botchain.ai", registry: "0xA0448Cd63f746a60447cfF1817ec9781C25F7b25" },
-  968: { name: "BOT Chain Bohr testnet", rpc: "https://rpc.bohr.life", explorer: "https://scan.bohr.life", registry: "0xC7a99F46674828aD14592fDaD319212f2ecd446D" },
+  677: { name: "BOT Chain", rpc: "https://rpc.botchain.ai", explorer: "https://scan.botchain.ai", registry: "0xA0448Cd63f746a60447cfF1817ec9781C25F7b25", fromBlock: 29921453 },
+  968: { name: "BOT Chain Bohr testnet", rpc: "https://rpc.bohr.life", explorer: "https://scan.bohr.life", registry: "0xC7a99F46674828aD14592fDaD319212f2ecd446D", fromBlock: 28871392 },
 };
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
@@ -206,6 +239,8 @@ function render() {
   $("download").disabled = !entries.length;
   $("record").disabled = !account;
   $("sync").disabled = !account;
+  $("lAsk").disabled = !account;
+  $("lFallback").disabled = !account;
   if (!chain().registry) show("anchorMsg", "warn", "The GermlineAnchor registry for " + esc(chain().name) + " is not set in this page yet.");
 }
 
@@ -245,7 +280,9 @@ async function connect() {
     load();
     render();
     show("connectMsg", "ok", "Connected to " + esc(chain().name) + ".");
-    if ($("watch").checked) setWatch(); else sync(false);
+    liveObserve("operator", "agent started");
+    if ($("watch").checked) setWatch();
+    if (!$("wAddr").value) $("wAddr").value = account;
   } catch (e) {
     show("connectMsg", "fail", walletError(e));
   }
@@ -417,6 +454,111 @@ $("chain").onchange = async () => {
 if (window.ethereum && window.ethereum.on) {
   window.ethereum.on("accountsChanged", (a) => { account = a && a[0] ? ethers.getAddress(a[0]) : null; $("who").textContent = account || "not connected"; load(); render(); });
 }
+// ---- The live demo agent ------------------------------------------------
+// Its config is whatever the controls say. Every change goes through the same
+// recorder a production agent uses (sdk/agent.js watchAgent: one entry per
+// change, recorded before the next model call, anchors batched).
+const LIVE_SYSTEM = "demo-support-agent";
+let liveTimer = null;
+
+function liveConfig() {
+  const tools = [];
+  if ($("lLookup").checked) tools.push("order_lookup");
+  if ($("lRefunds").checked) tools.push("refunds");
+  const limit = Number($("lLimit").value);
+  return {
+    model: $("lModel").value,
+    temperature: Number($("lTemp").value),
+    system: $("lPrompt").value,
+    tools,
+    refund_limit_usd: Number.isFinite(limit) ? limit : 0,
+  };
+}
+
+function liveObserve(actor, reason) {
+  if (!account) return null;
+  try {
+    const entry = GermlineWrite.change(entries, { system: LIVE_SYSTEM, actor, reason, after: liveConfig() });
+    if (!entry.changes.length) return null;
+    entries.push(entry);
+    save();
+    render();
+    const what = entry.changes.map((c) => esc(c.key) + (typeof c.to !== "object" && String(c.to).length < 40 ? " → " + esc(c.to) : "")).join(", ");
+    show("liveMsg", "ok", "Recorded #" + entry.seq + " by " + esc(actor) + ": " + what + "." + ($("lAuto").checked && chain().registry ? " Anchoring in 15 s…" : " Anchor it in step 3."));
+    if ($("lAuto").checked && chain().registry) {
+      if (liveTimer) clearTimeout(liveTimer);
+      liveTimer = setTimeout(() => { liveTimer = null; anchor(); }, 15000);
+    }
+    return entry;
+  } catch (e) {
+    show("liveMsg", "fail", esc(e.message));
+    return null;
+  }
+}
+
+const REPLIES = [
+  "Your order #1042 shipped yesterday and arrives Friday.",
+  "I can see the parcel is with the courier; tracking number ACM-88213.",
+  "Sorry about the delay. I've flagged it to the warehouse.",
+];
+let replyN = 0;
+function liveAsk() {
+  // A real agent's model call goes through watchAgent.wrap(): the config is
+  // observed first, so the log never trails what the agent ran.
+  liveObserve("operator", "settings changed");
+  const c = liveConfig();
+  const r = c.tools.includes("refunds") && c.refund_limit_usd > 0 ? "I've issued a refund of up to $" + c.refund_limit_usd + "." : REPLIES[replyN++ % REPLIES.length];
+  const prior = $("liveMsg").innerHTML;
+  $("liveMsg").innerHTML = prior + '<div class="msg" style="background:var(--bg);border:1px solid var(--border)"><span class="muted">' + esc(c.model) + " @ " + c.temperature + ":</span> " + esc(r) + "</div>";
+}
+
+function liveFallback() {
+  const opts = Array.from($("lModel").options).map((o) => o.value);
+  const next = opts[(opts.indexOf($("lModel").value) + 1) % opts.length];
+  $("lModel").value = next;
+  liveObserve("agent:" + LIVE_SYSTEM, "fallback: primary model timed out");
+}
+
+$("lTemp").oninput = () => { $("lTempV").textContent = $("lTemp").value; };
+for (const id of ["lModel", "lTemp", "lLookup", "lRefunds", "lLimit", "lPrompt"]) $(id).onchange = () => liveObserve("operator", "changed " + id.slice(1).toLowerCase());
+$("lAsk").onclick = liveAsk;
+$("lFallback").onclick = liveFallback;
+
+// ---- Watch any agent's anchors ---------------------------------------------
+async function watchAgentAnchors() {
+  $("wRows").innerHTML = "";
+  let addr;
+  try { addr = ethers.getAddress($("wAddr").value.trim()); } catch (e) { show("wMsg", "fail", "That is not a wallet address."); return; }
+  show("wMsg", "warn", "Reading " + esc(chain().name) + "…");
+  try {
+    const provider = new ethers.JsonRpcProvider(chain().rpc, chainId(), { staticNetwork: true });
+    const registry = new ethers.Contract(chain().registry, GermlineVerify.REGISTRY_ABI, provider);
+    const filter = registry.filters.Anchored(null, addr);
+    const latest = await provider.getBlockNumber();
+    let logs;
+    try {
+      logs = await registry.queryFilter(filter, chain().fromBlock, latest);
+    } catch (e) {
+      // Some RPCs cap the block range of one query: walk it in windows.
+      logs = [];
+      for (let to = latest; to >= chain().fromBlock && logs.length < 200; to -= 50000) {
+        const from = Math.max(chain().fromBlock, to - 49999);
+        logs = (await registry.queryFilter(filter, from, to)).concat(logs);
+      }
+    }
+    if (!logs.length) { show("wMsg", "warn", "No anchors from " + esc(addr) + " on " + esc(chain().name) + " yet."); return; }
+    $("wRows").innerHTML = logs.slice().reverse().map((l) =>
+      "<tr><td>" + l.blockNumber + '</td><td class="mono">' + esc(short(l.args.logId)) + "</td><td>" + Number(l.args[3]) +
+      '</td><td><a href="' + chain().explorer + "/tx/" + esc(l.transactionHash) + '" target="_blank" rel="noopener">' + esc(short(l.transactionHash)) + "</a></td></tr>").join("");
+    const logsN = new Set(logs.map((l) => l.args.logId)).size;
+    show("wMsg", "ok", logs.length + " anchor" + (logs.length === 1 ? "" : "s") + " across " + logsN + " log" + (logsN === 1 ? "" : "s") + " from " + esc(short(addr)) + ".");
+  } catch (e) {
+    show("wMsg", "fail", esc((e && (e.shortMessage || e.message)) || String(e)));
+  }
+}
+$("wGo").onclick = watchAgentAnchors;
+if (q.get("agent")) { $("wAddr").value = q.get("agent"); watchAgentAnchors(); }
+
 render();
 </script>
 </body>
