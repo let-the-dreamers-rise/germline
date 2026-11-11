@@ -1,6 +1,7 @@
 {
-  "model": "gpt-4o-mini",
+  "model": "gpt-4.1-mini",
   "temperature": 0.2,
   "system": "You are a support agent for Acme. Answer questions about orders. Cite the order policy and never promise a refund.",
-  "tools": { "refunds": false, "order_lookup": true }
+  "tools": { "refunds": true, "order_lookup": true },
+  "refund_limit_usd": 50
 }
