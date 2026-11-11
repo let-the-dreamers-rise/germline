@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Germline anchor app</title>
+<meta name="description" content="Record a change to an AI agent's config and anchor it on BOT Chain from your own wallet. Anyone can verify it afterwards." />
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --border: #e2e2dc; --text: #17181a; --dim: #5d6168; --faint: #8b9098;
+    --good: #1f7a4a; --good-bg: #e7f4ec; --bad: #b3392b; --bad-bg: #fbeae7; --warn: #8a5a00; --warn-bg: #fdf3dd; --accent: #b9791b;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b0c0e; --panel: #131519; --border: #262a32; --text: #e9ebef; --dim: #a0a6b0; --faint: #687080;
+      --good: #4cc38a; --good-bg: #10261b; --bad: #ec7a66; --bad-bg: #2a1512; --warn: #e2b24c; --warn-bg: #2a2110; --accent: #e2a63c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0c0e; --panel: #131519; --border: #262a32; --text: #e9ebef; --dim: #a0a6b0; --faint: #687080;
+    --good: #4cc38a; --good-bg: #10261b; --bad: #ec7a66; --bad-bg: #2a1512; --warn: #e2b24c; --warn-bg: #2a2110; --accent: #e2a63c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 var(--sans); }
+  main { max-width: 980px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  .lede { color: var(--dim); margin: 0 0 28px; max-width: 680px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+  .step { color: var(--accent); font: 600 12px var(--mono); margin-right: 6px; }
+  label { display: block; font-size: 12px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; margin: 12px 0 4px; }
+  input[type=text], select, textarea { width: 100%; font: 13px var(--mono); padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+  textarea { min-height: 130px; resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+  button { font: 600 14px var(--sans); padding: 9px 16px; border-radius: 6px; border: 1px solid var(--text); background: var(--text); color: var(--bg); cursor: pointer; margin: 14px 8px 0 0; }
+  button.ghost { background: transparent; color: var(--text); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .msg { border-radius: 8px; padding: 12px 14px; margin-top: 12px; font-size: 14px; word-break: break-word; }
+  .ok { background: var(--good-bg); color: var(--good); }
+  .fail { background: var(--bad-bg); color: var(--bad); }
+  .warn { background: var(--warn-bg); color: var(--warn); }
+  .mono { font-family: var(--mono); font-size: 12.5px; word-break: break-all; }
+  .muted { color: var(--faint); font-size: 13px; }
+  .table { overflow-x: auto; margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+  .hidden { display: none; }
+  footer { color: var(--faint); font-size: 13px; margin-top: 28px; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Anchor an AI config change</h1>
+  <p class="lede">
+    Record a change to an AI agent's settings and anchor it on BOT Chain from your own wallet. Each anchor is one
+    transaction into GermlineAnchor, a registry with no owner, admin or upgrade path. Your log stays in this browser
+    until you download it; only its hash goes on chain.
+  </p>
+
+  <div class="panel">
+    <h2><span class="step">1</span>Connect your wallet</h2>
+    <div class="row">
+      <div>
+        <label for="chain">Chain</label>
+        <select id="chain">
+          <option value="677">BOT Chain mainnet</option>
+          <option value="968">BOT Chain Bohr testnet</option>
+        </select>
+      </div>
+      <div>
+        <label>Wallet</label>
+        <div id="who" class="mono" style="padding:8px 0">not connected</div>
+      </div>
+    </div>
+    <button id="connect">Connect wallet</button>
+    <div id="connectMsg"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="step">2</span>Record a change</h2>
+    <div class="muted">Paste your agent's config as JSON. Germline compares it with the last config you recorded for the same system and logs what moved.</div>
+    <div class="row">
+      <div><label for="system">System</label><input type="text" id="system" value="support-agent" spellcheck="false" /></div>
+      <div><label for="actor">Changed by</label><input type="text" id="actor" placeholder="your name" spellcheck="false" /></div>
+    </div>
+    <label for="reason">Reason</label>
+    <input type="text" id="reason" placeholder="why it changed" />
+    <label for="config">Config after the change (JSON)</label>
+    <textarea id="config" spellcheck="false">{"model":"gpt-4o-mini","temperature":0.2,"system":"You are a support agent."}</textarea>
+    <button id="record">Record change</button>
+    <div id="recordMsg"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="step">3</span>Anchor on chain</h2>
+    <div class="muted">Writes the log's current head into the registry. Your wallet asks you to confirm; one anchor uses about 95,000 gas.</div>
+    <button id="anchor" disabled>Anchor now</button>
+    <button id="verify" class="ghost" disabled>Verify against the chain</button>
+    <div id="anchorMsg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Your log</h2>
+    <div id="logInfo" class="muted">No entries yet.</div>
+    <div class="table"><table><thead><tr><th>#</th><th>Kind</th><th>What</th><th>Hash</th></tr></thead><tbody id="rows"></tbody></table></div>
+    <button id="download" class="ghost" disabled>Download audit.jsonl</button>
+    <button id="import" class="ghost">Load an audit.jsonl</button>
+    <button id="clear" class="ghost">Start a new log</button>
+    <input type="file" id="file" accept=".jsonl,.json,.txt" class="hidden" />
+  </div>
+
+  <footer>
+    Same log format as <span class="mono">npx germline</span>: the CLI and the <a href="verify.html">verifier</a> read what this page writes.
+    <a href="https://github.com/let-the-dreamers-rise/germline">Source</a> (MIT).
+  </footer>
+</main>
+
+<!-- ethers 6.17.0 (MIT), vendored so this page loads no third-party code. -->
+<script src="vendor/ethers-6.17.0.umd.min.js"></script>
+<script src="verify-core.js"></script>
+<script src="anchor-core.js"></script>
+<script>
+"use strict";
+const CHAINS = {
+  677: { name: "BOT Chain", rpc: "https://rpc.botchain.ai", explorer: "https://scan.botchain.ai", registry: "0xA0448Cd63f746a60447cfF1817ec9781C25F7b25" },
+  968: { name: "BOT Chain Bohr testnet", rpc: "https://rpc.bohr.life", explorer: "https://scan.bohr.life", registry: "0xC7a99F46674828aD14592fDaD319212f2ecd446D" },
+};
+const $ = (id) => document.getElementById(id);
+const q = new URLSearchParams(location.search);
+if (q.get("network") === "bohr") $("chain").value = "968";
+if (q.get("registry") && /^0x[0-9a-fA-F]{40}$/.test(q.get("registry"))) CHAINS[$("chain").value].registry = q.get("registry");
+
+let account = null;
+let entries = [];
+
+const chainId = () => Number($("chain").value);
+const chain = () => CHAINS[chainId()];
+const storeKey = () => "germline.log." + chainId() + "." + (account || "none").toLowerCase();
+const short = (h) => (h ? h.slice(0, 10) + "…" + h.slice(-4) : "");
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function show(id, kind, html) { $(id).innerHTML = '<div class="msg ' + kind + '">' + html + "</div>"; }
+function clearMsg(id) { $(id).innerHTML = ""; }
+
+function save() { try { localStorage.setItem(storeKey(), GermlineWrite.serialize(entries)); } catch (e) {} }
+function load() {
+  entries = [];
+  try {
+    const text = localStorage.getItem(storeKey());
+    if (text) entries = GermlineVerify.readEntries(text);
+  } catch (e) { entries = []; }
+}
+
+function render() {
+  const check = GermlineVerify.verifyEntries(entries);
+  const last = entries[entries.length - 1];
+  $("rows").innerHTML = entries.map((e) => {
+    let what = "";
+    if (e.kind === "change") what = esc(e.system) + ": " + (e.changes || []).map((c) => esc(c.key)).join(", ") + (e.reason ? " (" + esc(e.reason) + ")" : "");
+    else if (e.kind === "anchor") {
+      const base = (CHAINS[e.chainId] || {}).explorer;
+      what = "anchored " + e.anchoredEntries + " entries, " + (base ? '<a href="' + base + "/tx/" + esc(e.txHash) + '" target="_blank" rel="noopener">tx ' + esc(short(e.txHash)) + "</a>" : esc(short(e.txHash)));
+    } else what = esc(e.kind || "?");
+    return "<tr><td>" + e.seq + "</td><td>" + esc(e.kind) + "</td><td>" + what + '</td><td class="mono">' + esc(short(e.hash)) + "</td></tr>";
+  }).join("");
+  $("logInfo").innerHTML = entries.length
+    ? (check.ok ? "" : '<span style="color:var(--bad)">This log does not verify: ' + esc(check.problems[0].reason) + ".</span> ") +
+      entries.length + " entries. Log ID <span class=\"mono\">" + esc(check.logId || "") + "</span>"
+    : "No entries yet.";
+  const ready = !!account && check.ok && entries.length > 0;
+  $("anchor").disabled = !(ready && last.kind !== "anchor" && chain().registry);
+  $("verify").disabled = !(entries.length && entries.some((e) => e.kind === "anchor"));
+  $("download").disabled = !entries.length;
+  $("record").disabled = !account;
+  if (!chain().registry) show("anchorMsg", "warn", "The GermlineAnchor registry for " + esc(chain().name) + " is not set in this page yet.");
+}
+
+function walletError(e) {
+  if (e && (e.code === 4001 || e.code === "ACTION_REJECTED")) return "You declined in your wallet. Nothing was sent.";
+  const m = (e && (e.shortMessage || e.message)) || String(e);
+  if (/insufficient funds/i.test(m)) return "Your wallet has no BOT for gas on " + esc(chain().name) + ". Add a little BOT and try again.";
+  return esc(m);
+}
+
+async function switchChain() {
+  const hex = "0x" + chainId().toString(16);
+  try {
+    await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
+  } catch (e) {
+    if (e && (e.code === 4902 || (e.data && e.data.originalError && e.data.originalError.code === 4902))) {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [{ chainId: hex, chainName: chain().name, nativeCurrency: { name: "BOT", symbol: "BOT", decimals: 18 }, rpcUrls: [chain().rpc], blockExplorerUrls: [chain().explorer] }],
+      });
+    } else throw e;
+  }
+}
+
+async function connect() {
+  clearMsg("connectMsg");
+  if (!window.ethereum) {
+    show("connectMsg", "fail", "No wallet found in this browser. Install MetaMask (or another EVM wallet) and reload. You can still verify logs on the <a href=\"verify.html\">verifier</a>.");
+    return;
+  }
+  try {
+    const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    await switchChain();
+    account = ethers.getAddress(accounts[0]);
+    $("who").textContent = account;
+    if (!$("actor").value) $("actor").value = account.slice(0, 8);
+    load();
+    render();
+    show("connectMsg", "ok", "Connected to " + esc(chain().name) + ".");
+  } catch (e) {
+    show("connectMsg", "fail", walletError(e));
+  }
+}
+
+function record() {
+  clearMsg("recordMsg");
+  let after;
+  try { after = JSON.parse($("config").value); } catch (e) { show("recordMsg", "fail", "The config is not valid JSON: " + esc(e.message)); return; }
+  try {
+    const entry = GermlineWrite.change(entries, { system: $("system").value.trim(), actor: $("actor").value.trim(), reason: $("reason").value.trim(), after });
+    if (!entry.changes.length) { show("recordMsg", "warn", "Nothing changed since the last config recorded for this system."); return; }
+    entries.push(entry);
+    save();
+    render();
+    show("recordMsg", "ok", "Recorded entry #" + entry.seq + ": " + entry.changes.map((c) => esc(c.key)).join(", ") + ". Anchor it in step 3.");
+  } catch (e) { show("recordMsg", "fail", esc(e.message)); }
+}
+
+async function anchor() {
+  clearMsg("anchorMsg");
+  $("anchor").disabled = true;
+  try {
+    await switchChain();
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const net = await provider.getNetwork();
+    if (Number(net.chainId) !== chainId()) throw new Error("your wallet is on chain " + net.chainId + ", not " + chain().name);
+    const check = GermlineVerify.verifyEntries(entries);
+    const registry = new ethers.Contract(chain().registry, GermlineVerify.REGISTRY_ABI, signer);
+    show("anchorMsg", "warn", "Confirm the transaction in your wallet…");
+    const tx = await registry.anchor(check.logId, check.entries, check.head, ethers.ZeroHash);
+    show("anchorMsg", "warn", "Sent. Waiting for the block… <span class=\"mono\">" + esc(tx.hash) + "</span>");
+    const receipt = await tx.wait();
+    let index = null;
+    for (const log of receipt.logs || []) {
+      try { const p = registry.interface.parseLog(log); if (p && p.name === "Anchored") index = Number(p.args.index); } catch (e) {}
+    }
+    if (index === null) throw new Error("the transaction emitted no Anchored event");
+    entries.push(GermlineWrite.anchor(entries, {
+      logId: check.logId, head: check.head, entries: check.entries, chainId: chainId(), registry: chain().registry,
+      index, txHash: receipt.hash, block: receipt.blockNumber, anchorer: await signer.getAddress(),
+    }));
+    save();
+    render();
+    show("anchorMsg", "ok", "Anchored " + check.entries + " entries. <a href=\"" + chain().explorer + "/tx/" + esc(receipt.hash) + "\" target=\"_blank\" rel=\"noopener\">View on " + esc(new URL(chain().explorer).host) + "</a>. Download your log to keep it.");
+  } catch (e) {
+    show("anchorMsg", "fail", walletError(e));
+    render();
+  }
+}
+
+async function verify() {
+  clearMsg("anchorMsg");
+  try {
+    const provider = new ethers.JsonRpcProvider(chain().rpc, chainId(), { staticNetwork: true });
+    const anchorers = Array.from(new Set(entries.filter((e) => e.kind === "anchor").map((e) => e.anchorer)));
+    const res = await GermlineVerify.verifyChain(entries, provider, { registry: chain().registry, logId: entries[0].hash, anchorer: anchorers });
+    if (res.ok) show("anchorMsg", "ok", "Verified: every anchor in the registry matches this log (" + res.results.length + " checked).");
+    else show("anchorMsg", "fail", "Does not verify: " + esc((res.results.find((r) => !r.ok) || {}).reason || "unknown"));
+  } catch (e) { show("anchorMsg", "fail", walletError(e)); }
+}
+
+function download() {
+  const blob = new Blob([GermlineWrite.serialize(entries)], { type: "application/x-ndjson" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "audit.jsonl";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+$("connect").onclick = connect;
+$("record").onclick = record;
+$("anchor").onclick = anchor;
+$("verify").onclick = verify;
+$("download").onclick = download;
+$("import").onclick = () => $("file").click();
+$("file").onchange = async () => {
+  const f = $("file").files[0];
+  if (!f) return;
+  entries = GermlineVerify.readEntries(new Uint8Array(await f.arrayBuffer()));
+  save();
+  render();
+};
+$("clear").onclick = () => {
+  if (entries.length && !confirm("Start a new log? Download the current one first if you want to keep it.")) return;
+  entries = [];
+  save();
+  render();
+};
+$("chain").onchange = async () => {
+  clearMsg("anchorMsg");
+  if (account && window.ethereum) { try { await switchChain(); } catch (e) { show("connectMsg", "fail", walletError(e)); } }
+  load();
+  render();
+};
+if (window.ethereum && window.ethereum.on) {
+  window.ethereum.on("accountsChanged", (a) => { account = a && a[0] ? ethers.getAddress(a[0]) : null; $("who").textContent = account || "not connected"; load(); render(); });
+}
+render();
+</script>
+</body>
+</html>
