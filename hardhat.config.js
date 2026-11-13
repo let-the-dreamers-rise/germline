@@ -1,5 +1,5 @@
 require("@nomicfoundation/hardhat-toolbox");
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 
 // 0G network details, from docs.0g.ai. Mainnet is chain 16661; Galileo is the
 // public testnet and the only one with a faucet.

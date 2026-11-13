@@ -81,4 +81,24 @@ describe("watchAgent", function () {
     expect(errors).to.deep.equal(["no gas"]);
     expect(audit.log.entries().length).to.equal(1);
   });
+
+  it("anchors changes made while an anchor transaction was still in flight", async function () {
+    const sent = [];
+    let release;
+    const gate = new Promise((r) => (release = r));
+    const signer = fakeSigner(sent);
+    const send = signer.sendTransaction;
+    signer.sendTransaction = async (tx) => { const out = await send(tx); if (sent.length === 1) await gate; return out; };
+    const anchored = [];
+    const audit = watchAgent({ system: "bot", file: tmpLog(), signer, registry: null, anchorAfterMs: 20, onAnchor: (e) => anchored.push(e) });
+    audit.observe({ model: "m1" });
+    await new Promise((r) => setTimeout(r, 50)); // first anchor is now waiting on the chain
+    audit.observe({ model: "m2" }, { actor: "operator", reason: "mid-flight" });
+    release();
+    await new Promise((r) => setTimeout(r, 150));
+    expect(sent.length).to.equal(2);
+    expect(anchored.map((e) => e.anchoredEntries)).to.deep.equal([1, 3]);
+    expect(audit.log.verify().ok).to.equal(true);
+    expect(await audit.flush()).to.equal(null);
+  });
 });

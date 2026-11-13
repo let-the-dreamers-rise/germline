@@ -418,7 +418,7 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
     if (!check.ok) throw new Error("refusing to anchor an audit log that does not verify");
     if (check.entries === 0) throw new Error("nothing to anchor: the audit log is empty");
     const all = entries();
-    if (all[all.length - 1].kind === "anchor") return null;
+    if (!needsAnchor(all)) return null;
 
     const doFetch = fetchFn || globalThis.fetch;
     if (typeof doFetch !== "function") throw new Error("no fetch available; use Node 18 or later");
@@ -488,7 +488,7 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
     // Nothing recorded since the last anchor: another transaction would pay
     // gas to say the same thing again.
     const all = entries();
-    if (all[all.length - 1].kind === "anchor") return null;
+    if (!needsAnchor(all)) return null;
 
     let published = null;
     if (upload) {
@@ -610,8 +610,20 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
   return { file, entries, record, track, lastChange, lastAnchor, recordSearch, recordReview, verify, anchor, verifyChain, verifyAnchors };
 }
 
+/// True when the log holds a change no anchor covers yet. An anchor entry
+/// covers the first `anchoredEntries` entries; changes recorded while its
+/// transaction was in flight sit before it in the file but after that point,
+/// so "the last entry is an anchor" alone is not enough.
+function needsAnchor(all) {
+  let covered = 0;
+  for (const e of all) if (e && e.kind === "anchor" && Number(e.anchoredEntries) > covered) covered = Number(e.anchoredEntries);
+  for (let i = covered; i < all.length; i++) if (all[i] && all[i].kind !== "anchor") return true;
+  return false;
+}
+
 module.exports = {
   openAuditLog,
+  needsAnchor,
   defaultActor,
   verifyEntries,
   diff,

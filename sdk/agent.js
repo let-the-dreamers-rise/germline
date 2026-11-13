@@ -25,7 +25,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { openAuditLog } = require("./audit");
+const { openAuditLog, needsAnchor } = require("./audit");
 
 // The registry recorded in deployments/ for a chain id, or null.
 function registryForChain(chainId) {
@@ -67,6 +67,7 @@ function watchAgent(options = {}) {
   const actor = options.actor || "agent:" + system;
 
   let pending = 0;
+
   let timer = null;
   let inflight = null;
 
@@ -90,7 +91,12 @@ function watchAgent(options = {}) {
         inflight = null;
       }
     })();
-    return inflight;
+    const done = inflight;
+    // Changes recorded while that transaction was in flight are not covered
+    // by it: make sure they get an anchor of their own, even if no further
+    // change ever comes.
+    done.then((entry) => { if (entry && needsAnchor(log.entries())) { pending = Math.max(pending, 1); schedule(); } });
+    return done;
   }
 
   function schedule() {
@@ -128,8 +134,7 @@ function watchAgent(options = {}) {
   /// Anchor anything waiting now, e.g. before the process exits.
   async function flush() {
     if (inflight) await inflight;
-    const all = log.entries();
-    if (all.length && all[all.length - 1].kind !== "anchor") return anchorNow();
+    if (needsAnchor(log.entries())) return anchorNow();
     return null;
   }
 

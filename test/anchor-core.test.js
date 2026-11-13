@@ -65,4 +65,18 @@ describe("browser log writer", function () {
     web[0].after = { x: 2 };
     expect(() => write.change(web, { system: "a", actor: "b", after: { x: 3 } })).to.throw(/does not verify/);
   });
+
+  it("knows when a change is not yet covered by any anchor", function () {
+    const W = require("../web/anchor-core.js");
+    const { needsAnchor } = require("../sdk/audit");
+    const log = [];
+    log.push(W.change(log, { system: "s", actor: "a", after: { m: 1 } }));
+    const head = log[0].hash;
+    log.push(W.change(log, { system: "s", actor: "a", after: { m: 2 } })); // recorded while the anchor tx was in flight
+    log.push(W.anchor(log, { logId: head, head, entries: 1, chainId: 677, registry: "0x" + "1".repeat(40), index: 0, txHash: "0x" + "2".repeat(64), block: 1, anchorer: "0x" + "3".repeat(40) }));
+    expect(W.needsAnchor(log)).to.equal(true);
+    expect(needsAnchor(log)).to.equal(true);
+    expect(W.needsAnchor(log.slice(0, 1))).to.equal(true);
+    expect(W.needsAnchor([])).to.equal(false);
+  });
 });
