@@ -59,12 +59,12 @@
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
-    "hardhat": "^2.22.10",
-    "dotenv": "^16.4.5"
+    "dotenv": "^18.0.10",
+    "hardhat": "^2.22.10"
   },
   "dependencies": {
     "@openzeppelin/contracts": "4.9.6",
-    "ethers": "^6.13.1"
+    "ethers": "^6.17.0"
   },
   "bin": {
     "germline": "bin/germline.js"

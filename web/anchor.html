@@ -80,6 +80,7 @@
     </div>
     <button id="connect">Connect wallet</button>
     <div id="connectMsg"></div>
+    <div id="registryWarn"></div>
   </div>
 
   <div class="panel">
@@ -194,10 +195,17 @@ const CHAINS = {
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
 if (q.get("network") === "bohr") $("chain").value = "968";
-if (q.get("registry") && /^0x[0-9a-fA-F]{40}$/.test(q.get("registry"))) CHAINS[$("chain").value].registry = q.get("registry");
+// A link can point the app at another registry (e.g. a test deployment).
+// Say so plainly, so nobody anchors to a contract they did not mean to.
+if (q.get("registry") && /^0x[0-9a-fA-F]{40}$/.test(q.get("registry")) && q.get("registry").toLowerCase() !== String(CHAINS[$("chain").value].registry).toLowerCase()) {
+  CHAINS[$("chain").value].registry = q.get("registry");
+  window.germlineRegistryOverride = q.get("registry");
+}
 
 let account = null;
 let entries = [];
+let anchoring = false;
+let liveTimer = null;
 
 const chainId = () => Number($("chain").value);
 const chain = () => CHAINS[chainId()];
@@ -225,16 +233,16 @@ function render() {
     if (e.kind === "change") what = esc(e.system) + ": " + (e.changes || []).map((c) => esc(c.key)).join(", ") + (e.reason ? " (" + esc(e.reason) + ")" : "");
     else if (e.kind === "anchor") {
       const base = (CHAINS[e.chainId] || {}).explorer;
-      what = "anchored " + e.anchoredEntries + " entries, " + (base ? '<a href="' + base + "/tx/" + esc(e.txHash) + '" target="_blank" rel="noopener">tx ' + esc(short(e.txHash)) + "</a>" : esc(short(e.txHash)));
+      what = "anchored " + esc(e.anchoredEntries) + " entries, " + (base ? '<a href="' + base + "/tx/" + esc(e.txHash) + '" target="_blank" rel="noopener">tx ' + esc(short(e.txHash)) + "</a>" : esc(short(e.txHash)));
     } else what = esc(e.kind || "?");
-    return "<tr><td>" + e.seq + "</td><td>" + esc(e.kind) + "</td><td>" + what + '</td><td class="mono">' + esc(short(e.hash)) + "</td></tr>";
+    return "<tr><td>" + esc(e.seq) + "</td><td>" + esc(e.kind) + "</td><td>" + what + '</td><td class="mono">' + esc(short(e.hash)) + "</td></tr>";
   }).join("");
   $("logInfo").innerHTML = entries.length
     ? (check.ok ? "" : '<span style="color:var(--bad)">This log does not verify: ' + esc(check.problems[0].reason) + ".</span> ") +
       entries.length + " entries. Log ID <span class=\"mono\">" + esc(check.logId || "") + "</span>"
     : "No entries yet.";
   const ready = !!account && check.ok && entries.length > 0;
-  $("anchor").disabled = !(ready && last.kind !== "anchor" && chain().registry);
+  $("anchor").disabled = anchoring || !(ready && GermlineWrite.needsAnchor(entries) && chain().registry);
   $("verify").disabled = !(entries.length && entries.some((e) => e.kind === "anchor"));
   $("download").disabled = !entries.length;
   $("record").disabled = !account;
@@ -341,7 +349,7 @@ async function sync(auto) {
     const last = entries[entries.length - 1];
     if (added) show("syncMsg", "ok", "Recorded " + added + " change" + (added === 1 ? "" : "s") + " from " + esc(repo) + "." + ($("watch").checked ? "" : " Anchor them in step 3."));
     else if (!auto) show("syncMsg", "ok", "Up to date: every commit to " + esc(path) + " is already recorded.");
-    if ($("watch").checked && last && last.kind !== "anchor" && chain().registry) await anchor();
+    if ($("watch").checked && GermlineWrite.needsAnchor(entries) && chain().registry) await anchor();
     return added;
   } catch (e) {
     show("syncMsg", "fail", esc(e.message));
@@ -372,6 +380,11 @@ function record() {
 }
 
 async function anchor() {
+  // One wallet prompt at a time: the auto-anchor timer and the button can
+  // both ask, and two in flight would race on the registry's append-only check.
+  if (anchoring || !GermlineWrite.needsAnchor(entries)) return;
+  anchoring = true;
+  let anchored = false;
   clearMsg("anchorMsg");
   $("anchor").disabled = true;
   try {
@@ -396,11 +409,18 @@ async function anchor() {
       index, txHash: receipt.hash, block: receipt.blockNumber, anchorer: await signer.getAddress(),
     }));
     save();
+    anchored = true;
     render();
     show("anchorMsg", "ok", "Anchored " + check.entries + " entries. <a href=\"" + chain().explorer + "/tx/" + esc(receipt.hash) + "\" target=\"_blank\" rel=\"noopener\">View on " + esc(new URL(chain().explorer).host) + "</a>. Download your log to keep it.");
   } catch (e) {
     show("anchorMsg", "fail", walletError(e));
+  } finally {
+    anchoring = false;
     render();
+    // Changes the agent made while the wallet was open still need an anchor.
+    if (anchored && $("lAuto").checked && account && chain().registry && GermlineWrite.needsAnchor(entries) && !liveTimer) {
+      liveTimer = setTimeout(() => { liveTimer = null; anchor(); }, 15000);
+    }
   }
 }
 
@@ -459,7 +479,6 @@ if (window.ethereum && window.ethereum.on) {
 // recorder a production agent uses (sdk/agent.js watchAgent: one entry per
 // change, recorded before the next model call, anchors batched).
 const LIVE_SYSTEM = "demo-support-agent";
-let liveTimer = null;
 
 function liveConfig() {
   const tools = [];
@@ -559,6 +578,7 @@ async function watchAgentAnchors() {
 $("wGo").onclick = watchAgentAnchors;
 if (q.get("agent")) { $("wAddr").value = q.get("agent"); watchAgentAnchors(); }
 
+if (window.germlineRegistryOverride) show("registryWarn", "warn", "This link points the app at registry <span class=\"mono\">" + esc(window.germlineRegistryOverride) + "</span> instead of Germline's default registry. Anchors go to that contract. Only continue if you meant it.");
 render();
 </script>
 </body>

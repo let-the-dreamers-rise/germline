@@ -184,7 +184,7 @@ async function githubOidcToken(audience) {
 
 function signerFromEnv() {
   const key = anchorKey();
-  if (!key) throw new Error("set GERMLINE_ANCHOR_KEY (or DEPLOYER_KEY) to a funded 0G key to anchor; an anchor is an on-chain transaction");
+  if (!key) throw new Error("set GERMLINE_ANCHOR_KEY (or DEPLOYER_KEY) to a funded key on the chain you anchor to; an anchor is an on-chain transaction");
   const { JsonRpcProvider, Wallet } = require("ethers");
   return new Wallet(key, new JsonRpcProvider(DEFAULT_RPC));
 }

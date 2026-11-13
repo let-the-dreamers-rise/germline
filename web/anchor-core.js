@@ -133,5 +133,17 @@
     return new Set(existing.filter((e) => e.kind === "change" && e.commit).map((e) => e.commit));
   }
 
-  return { change, anchor, serialize, lastConfig, diff, recordedCommits };
+
+  /// True when the log holds a change no anchor covers yet. An anchor entry
+  /// covers the first `anchoredEntries` entries; changes recorded while its
+  /// transaction was in flight sit before it in the file but after that point,
+  /// so "the last entry is an anchor" alone is not enough.
+  function needsAnchor(all) {
+    let covered = 0;
+    for (const e of all) if (e && e.kind === "anchor" && Number(e.anchoredEntries) > covered) covered = Number(e.anchoredEntries);
+    for (let i = covered; i < all.length; i++) if (all[i] && all[i].kind !== "anchor") return true;
+    return false;
+  }
+
+  return { change, anchor, serialize, lastConfig, diff, recordedCommits, needsAnchor };
 });
