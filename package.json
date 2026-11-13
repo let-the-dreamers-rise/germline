@@ -1,7 +1,7 @@
 {
   "name": "germline",
-  "version": "0.4.0",
-  "description": "A tamper-evident audit trail for AI configuration changes, anchored on 0G. Record who changed which prompt, model or parameter, why, and the eval that justified it; hand an auditor a record they can verify themselves.",
+  "version": "0.5.0",
+  "description": "A tamper-evident audit trail for AI configuration changes, anchored on 0G or BOT Chain. Record who changed which prompt, model or parameter, why, and the eval that justified it; hand an auditor a record they can verify themselves.",
   "license": "MIT",
   "main": "sdk/index.js",
   "type": "commonjs",
@@ -20,7 +20,9 @@
     "llm",
     "evaluation",
     "configuration",
-    "0g"
+    "0g",
+    "botchain",
+    "bot-chain"
   ],
   "files": [
     "bin/",

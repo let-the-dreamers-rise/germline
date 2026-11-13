@@ -1,5 +1,5 @@
 name: Germline AI config audit trail
-description: Record every change to your prompts and AI config in a tamper-evident log, verify it, and anchor it on 0G.
+description: Record every change to your prompts and AI config in a tamper-evident log, verify it, and anchor it on 0G or BOT Chain.
 branding:
   icon: shield
   color: green
@@ -52,7 +52,7 @@ inputs:
     required: false
     default: "true"
   rpc:
-    description: 0G Chain RPC URL.
+    description: Chain RPC URL (0G by default; https://rpc.botchain.ai for BOT Chain).
     required: false
     default: https://evmrpc.0g.ai
 
