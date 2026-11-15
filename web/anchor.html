@@ -97,8 +97,8 @@
     </div>
     <label for="lPrompt">System prompt</label>
     <textarea id="lPrompt" spellcheck="false" style="min-height:70px">You are a support agent for Acme. Answer questions about orders. Never promise a refund.</textarea>
-    <button id="lAsk" disabled>Ask the agent something</button>
-    <button id="lFallback" class="ghost" disabled>Simulate a model fallback</button>
+    <button id="lAsk">Ask the agent something</button>
+    <button id="lFallback" class="ghost">Simulate a model fallback</button>
     <div style="font-size:14px;margin-top:14px"><input type="checkbox" id="lAuto" checked /> Anchor automatically, 15 seconds after a change, batched (your wallet confirms)</div>
     <div id="liveMsg"></div>
   </div>
@@ -257,14 +257,13 @@ function render() {
     ? (check.ok ? "" : '<span style="color:var(--bad)">This log does not verify: ' + esc(check.problems[0].reason) + ".</span> ") +
       entries.length + " entries. Log ID <span class=\"mono\">" + esc(check.logId || "") + "</span>"
     : "No entries yet.";
-  const ready = !!account && check.ok && entries.length > 0;
+  // Without a wallet the button still works: it asks to connect first.
+  const ready = check.ok && entries.length > 0;
   $("anchor").disabled = anchoring || !(ready && GermlineWrite.needsAnchor(entries) && chain().registry);
   $("verify").disabled = !(entries.length && entries.some((e) => e.kind === "anchor"));
   $("download").disabled = !entries.length;
   $("record").disabled = !account;
   $("sync").disabled = !account;
-  $("lAsk").disabled = !account;
-  $("lFallback").disabled = !account;
   if (!chain().registry) show("anchorMsg", "warn", "The GermlineAnchor registry for " + esc(chain().name) + " is not set in this page yet.");
 }
 
@@ -307,7 +306,18 @@ async function connect() {
     account = ethers.getAddress(accounts[0]);
     $("who").textContent = account;
     if (!$("actor").value) $("actor").value = account.slice(0, 8);
+    // A log started before connecting moves to this wallet, unless the wallet
+    // already has its own log in this browser.
+    const before = entries;
+    let beforeKey = null;
+    try { beforeKey = "germline.log." + chainId() + ".none"; } catch (e) {}
     load();
+    if (!entries.length && before.length) {
+      entries = before;
+      save();
+      try { localStorage.removeItem(beforeKey); } catch (e) {}
+      restoreLive();
+    }
     render();
     let bal = null;
     try { bal = await new ethers.BrowserProvider(window.ethereum).getBalance(account); } catch (e) {}
@@ -315,6 +325,11 @@ async function connect() {
       (bal === null ? "" : " Balance " + esc(Number(ethers.formatEther(bal)).toFixed(4)) + " BOT." +
         (bal === 0n ? " One anchor costs about 0.002 BOT for gas, so add a little BOT to this wallet first. Everything else works without it." : "")));
     liveObserve("operator", "agent started");
+    // Changes made before connecting get anchored too.
+    if ($("lAuto").checked && chain().registry && GermlineWrite.needsAnchor(entries) && !liveTimer) {
+      show("liveMsg", "ok", "Connected. Anchoring the " + entries.filter((e) => e.kind === "change").length + " recorded change(s) in 15 s…");
+      liveTimer = setTimeout(() => { liveTimer = null; anchor(); }, 15000);
+    }
     if ($("watch").checked) setWatch();
     if (!$("wAddr").value) $("wAddr").value = account;
   } catch (e) {
@@ -409,6 +424,7 @@ async function anchor() {
   // One wallet prompt at a time: the auto-anchor timer and the button can
   // both ask, and two in flight would race on the registry's append-only check.
   if (anchoring || !GermlineWrite.needsAnchor(entries)) return;
+  if (!account) { await connect(); if (!account) return; }
   anchoring = true;
   let anchored = false;
   clearMsg("anchorMsg");
@@ -534,7 +550,6 @@ function liveConfig() {
 }
 
 function liveObserve(actor, reason) {
-  if (!account) return null;
   try {
     const entry = GermlineWrite.change(entries, { system: LIVE_SYSTEM, actor, reason, after: liveConfig() });
     if (!entry.changes.length) return null;
@@ -542,8 +557,8 @@ function liveObserve(actor, reason) {
     save();
     render();
     const what = entry.changes.map((c) => esc(c.key) + (typeof c.to !== "object" && String(c.to).length < 40 ? " → " + esc(c.to) : "")).join(", ");
-    show("liveMsg", "ok", "Recorded #" + entry.seq + " by " + esc(actor) + ": " + what + "." + ($("lAuto").checked && chain().registry ? " Anchoring in 15 s…" : " Anchor it in step 3."));
-    if ($("lAuto").checked && chain().registry) {
+    show("liveMsg", "ok", "Recorded #" + entry.seq + " by " + esc(actor) + ": " + what + "." + (!account ? " Recorded in this browser. Connect a wallet (step 1) to anchor it on " + esc(chain().name) + "." : $("lAuto").checked && chain().registry ? " Anchoring in 15 s…" : " Anchor it in step 3."));
+    if (account && $("lAuto").checked && chain().registry) {
       if (liveTimer) clearTimeout(liveTimer);
       liveTimer = setTimeout(() => { liveTimer = null; anchor(); }, 15000);
     }
@@ -618,6 +633,8 @@ $("wGo").onclick = watchAgentAnchors;
 if (q.get("agent")) { $("wAddr").value = q.get("agent"); watchAgentAnchors(); }
 
 if (window.germlineRegistryOverride) show("registryWarn", "warn", "This link points the app at registry <span class=\"mono\">" + esc(window.germlineRegistryOverride) + "</span> instead of Germline's default registry. Anchors go to that contract. Only continue if you meant it.");
+load();
+liveObserve("operator", "agent started");
 render();
 </script>
 </body>
