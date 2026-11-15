@@ -223,6 +223,22 @@ function load() {
     const text = localStorage.getItem(storeKey());
     if (text) entries = GermlineVerify.readEntries(text);
   } catch (e) { entries = []; }
+  restoreLive();
+}
+
+// Put the demo agent back the way the log last saw it, so reopening the page
+// does not record (and pay to anchor) a "change" back to the defaults.
+function restoreLive() {
+  const c = GermlineWrite.lastConfig(entries, "demo-support-agent");
+  if (!c || typeof c !== "object") return;
+  if (typeof c.model === "string") {
+    if (!Array.from($("lModel").options).some((o) => o.value === c.model)) $("lModel").add(new Option(c.model));
+    $("lModel").value = c.model;
+  }
+  if (Number.isFinite(c.temperature)) { $("lTemp").value = c.temperature; $("lTempV").textContent = String(c.temperature); }
+  if (typeof c.system === "string") $("lPrompt").value = c.system;
+  if (Array.isArray(c.tools)) { $("lLookup").checked = c.tools.includes("order_lookup"); $("lRefunds").checked = c.tools.includes("refunds"); }
+  if (Number.isFinite(c.refund_limit_usd)) $("lLimit").value = c.refund_limit_usd;
 }
 
 function render() {
@@ -255,6 +271,8 @@ function render() {
 function walletError(e) {
   if (e && (e.code === 4001 || e.code === "ACTION_REJECTED")) return "You declined in your wallet. Nothing was sent.";
   const m = (e && (e.shortMessage || e.message)) || String(e);
+  if (/^NO_GAS:/.test(m)) return esc(m.slice(7));
+  if (/could not coalesce/i.test(m)) return "Your wallet could not send the transaction. Check that it has a little BOT on " + esc(chain().name) + " and try again.";
   if (/insufficient funds/i.test(m)) return "Your wallet has no BOT for gas on " + esc(chain().name) + ". Add a little BOT and try again.";
   return esc(m);
 }
@@ -276,7 +294,11 @@ async function switchChain() {
 async function connect() {
   clearMsg("connectMsg");
   if (!window.ethereum) {
-    show("connectMsg", "fail", "No wallet found in this browser. Install MetaMask (or another EVM wallet) and reload. You can still verify logs on the <a href=\"verify.html\">verifier</a>.");
+    const phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const mm = "https://metamask.app.link/dapp/" + location.host + location.pathname + location.search;
+    show("connectMsg", "fail", phone
+      ? "No wallet in this browser. On a phone, open this page inside your wallet app: <a href=\"" + esc(mm) + "\">Open in MetaMask</a> (or paste the link into your wallet's browser)."
+      : "No wallet found in this browser. Install MetaMask (or another EVM wallet) and reload. You can still verify logs on the <a href=\"verify.html\">verifier</a>.");
     return;
   }
   try {
@@ -287,7 +309,11 @@ async function connect() {
     if (!$("actor").value) $("actor").value = account.slice(0, 8);
     load();
     render();
-    show("connectMsg", "ok", "Connected to " + esc(chain().name) + ".");
+    let bal = null;
+    try { bal = await new ethers.BrowserProvider(window.ethereum).getBalance(account); } catch (e) {}
+    show("connectMsg", bal === 0n ? "warn" : "ok", "Connected to " + esc(chain().name) + "." +
+      (bal === null ? "" : " Balance " + esc(Number(ethers.formatEther(bal)).toFixed(4)) + " BOT." +
+        (bal === 0n ? " One anchor costs about 0.002 BOT for gas, so add a little BOT to this wallet first. Everything else works without it." : "")));
     liveObserve("operator", "agent started");
     if ($("watch").checked) setWatch();
     if (!$("wAddr").value) $("wAddr").value = account;
@@ -395,6 +421,18 @@ async function anchor() {
     if (Number(net.chainId) !== chainId()) throw new Error("your wallet is on chain " + net.chainId + ", not " + chain().name);
     const check = GermlineVerify.verifyEntries(entries);
     const registry = new ethers.Contract(chain().registry, GermlineVerify.REGISTRY_ABI, signer);
+    try {
+      const from = await signer.getAddress();
+      const gas = await registry.anchor.estimateGas(check.logId, check.entries, check.head, ethers.ZeroHash);
+      const price = (await provider.getFeeData()).gasPrice || 0n;
+      const have = await provider.getBalance(from);
+      if (have < gas * price) {
+        throw new Error("NO_GAS:This anchor needs about " + Number(ethers.formatEther(gas * price)).toFixed(4) + " BOT for gas and this wallet has " + Number(ethers.formatEther(have)).toFixed(4) + " BOT. Add a little BOT on " + chain().name + " and press Anchor now. Your log is saved in this browser meanwhile.");
+      }
+    } catch (e) {
+      if (e && /^NO_GAS:/.test(e.message)) throw e;
+      if (e && /insufficient funds/i.test((e.shortMessage || "") + " " + (e.message || ""))) throw new Error("NO_GAS:This wallet has no BOT for gas on " + chain().name + ". Add about 0.002 BOT and press Anchor now. Your log is saved in this browser meanwhile.");
+    }
     show("anchorMsg", "warn", "Confirm the transaction in your wallet…");
     const tx = await registry.anchor(check.logId, check.entries, check.head, ethers.ZeroHash);
     show("anchorMsg", "warn", "Sent. Waiting for the block… <span class=\"mono\">" + esc(tx.hash) + "</span>");
