@@ -168,7 +168,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: let-the-dreamers-rise/germline@main
+      - uses: let-the-dreamers-rise/germline@v0.5.0
         with:
           anchor-key: ${{ secrets.GERMLINE_ANCHOR_KEY }}
           rpc: https://rpc.botchain.ai</pre>
@@ -429,8 +429,9 @@ async function verify() {
   try {
     const provider = new ethers.JsonRpcProvider(chain().rpc, chainId(), { staticNetwork: true });
     const anchorers = Array.from(new Set(entries.filter((e) => e.kind === "anchor").map((e) => e.anchorer)));
-    const res = await GermlineVerify.verifyChain(entries, provider, { registry: chain().registry, logId: entries[0].hash, anchorer: anchorers });
-    if (res.ok) show("anchorMsg", "ok", "Verified: every anchor in the registry matches this log (" + res.results.length + " checked).");
+    if (!anchorers.length) { show("anchorMsg", "warn", "Not anchored yet: there is nothing on chain to check this log against."); return; }
+    const res = await GermlineVerify.verifyChain(entries, provider, { registry: chain().registry, logId: entries[0].hash, anchorer: anchorers, chainId: chainId() });
+    if (res.ok) show("anchorMsg", "ok", "Verified on " + esc(chain().name) + ": every anchor in the registry matches this log (" + res.results.length + " checked).");
     else show("anchorMsg", "fail", "Does not verify: " + esc((res.results.find((r) => !r.ok) || {}).reason || "unknown"));
   } catch (e) { show("anchorMsg", "fail", walletError(e)); }
 }

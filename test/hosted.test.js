@@ -178,6 +178,24 @@ describe("hosted anchoring", function () {
     expect(hosted.parseCustomers("")).to.deep.equal([]);
   });
 
+  it("refuses an entry count far beyond the last anchor, so one call cannot lock the log", async function () {
+    const call = (entries) =>
+      hosted.handleAnchor({ method: "POST", headers: { authorization: "Bearer " + TOKEN }, body: { logId, entries, head: ethers.keccak256("0x01") } }, deps);
+    expect((await call(hosted.MAX_ENTRIES_JUMP + 1)).status).to.equal(400);
+    expect((await call(Number.MAX_SAFE_INTEGER)).status).to.equal(400);
+    expect(await registry.anchorCount(logId, service.address)).to.equal(0n);
+    expect((await call(hosted.MAX_ENTRIES_JUMP)).status).to.equal(200);
+  });
+
+  it("fails closed on a malformed minimum interval instead of dropping the rate limit", function () {
+    expect(hosted.parseMinInterval(undefined)).to.equal(hosted.DEFAULT_MIN_INTERVAL);
+    expect(hosted.parseMinInterval("")).to.equal(hosted.DEFAULT_MIN_INTERVAL);
+    expect(hosted.parseMinInterval("600")).to.equal(600);
+    for (const bad of ["5m", "300s", "0", "-1", "1.5", "NaN", "Infinity"]) {
+      expect(() => hosted.parseMinInterval(bad), bad).to.throw(/GERMLINE_MIN_INTERVAL/);
+    }
+  });
+
   it("refuses a non-https service URL", async function () {
     await rejects(log.anchor({ hosted: client({ url: "http://evil.example" }) }), /https URL/);
   });
@@ -261,6 +279,27 @@ describe("hosted anchoring with GitHub OIDC", function () {
     const forgedHeader = Buffer.from(JSON.stringify({ alg: "none", kid })).toString("base64url");
     await rejects(anchorWith(forgedHeader + "." + none[1] + "."), /unknown or missing token/);
     await rejects(anchorWith(jwt({}, { header: { kid: "unknown-kid" } })), /unknown or missing token/);
+  });
+
+  it("keeps GitHub's keys when a refresh fails, and does not refetch for every unknown kid", async function () {
+    hosted._resetJwksCache();
+    let calls = 0;
+    let broken = false;
+    deps.fetchJwks = async () => {
+      calls++;
+      if (broken) return { message: "API rate limit exceeded" };
+      return jwks;
+    };
+    const before = await hosted.verifyGithubOidc(jwt({}), { fetchJwks: deps.fetchJwks });
+    expect(before).to.not.equal(null);
+    broken = true;
+    // A flood of tokens with made-up key ids: at most one refetch, and the
+    // failed refetch must not wipe the good keys.
+    for (let i = 0; i < 5; i++) {
+      expect(await hosted.verifyGithubOidc(jwt({}, { header: { kid: "junk-" + i } }), { fetchJwks: deps.fetchJwks })).to.equal(null);
+    }
+    expect(calls).to.be.at.most(2);
+    expect(await hosted.verifyGithubOidc(jwt({}), { fetchJwks: deps.fetchJwks })).to.not.equal(null);
   });
 
   it("refuses a valid token for a log id the repository is not bound to", async function () {

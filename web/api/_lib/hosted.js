@@ -36,6 +36,24 @@ const MAX_ENTRIES = 2 ** 63;
 // One anchor per log every few minutes is plenty for CI and caps what a
 // leaked token can cost us in gas.
 const DEFAULT_MIN_INTERVAL = 300;
+// The most one call may extend a log past its last anchor. Anchoring is
+// append-only and permanent, so without a cap one leaked token could anchor
+// a huge entry count and every honest anchor after it would be refused.
+const MAX_ENTRIES_JUMP = 100000;
+// How long to wait for an anchor to be mined before answering.
+const TX_TIMEOUT_MS = 90 * 1000;
+
+/// GERMLINE_MIN_INTERVAL as seconds. Anything but a positive integer stops
+/// the service at start-up: a typo such as "5m" must not switch the gas
+/// limit off.
+function parseMinInterval(value) {
+  if (value === undefined || value === null || value === "") return DEFAULT_MIN_INTERVAL;
+  const text = String(value).trim();
+  if (!/^[1-9][0-9]{0,6}$/.test(text)) {
+    throw new Error("GERMLINE_MIN_INTERVAL must be a whole number of seconds, at least 1 (got " + JSON.stringify(text.slice(0, 20)) + ")");
+  }
+  return Number(text);
+}
 
 function sha256(text) {
   return crypto.createHash("sha256").update(String(text), "utf8").digest("hex");
@@ -98,14 +116,43 @@ function b64urlJson(part) {
   return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
 }
 
+// GitHub's signing keys. A refresh that fails or returns no keys keeps the
+// keys we have, and an unknown kid triggers at most one refetch a minute, so
+// a flood of junk tokens can neither wipe the cache nor make us hammer GitHub.
+const JWKS_MAX_AGE_MS = 10 * 60 * 1000;
+const JWKS_MIN_REFETCH_MS = 60 * 1000;
+let jwksLastFetch = 0;
+
+function defaultFetchJwks(url) {
+  return globalThis.fetch(url, { signal: AbortSignal.timeout(3000) }).then((r) => {
+    if (!r.ok) throw new Error("JWKS fetch answered " + r.status);
+    return r.json();
+  });
+}
+
 async function githubKeys(fetchJwks, kid) {
-  const fresh = !jwksCache || Date.now() - jwksCache.at > 10 * 60 * 1000;
-  if (fresh || !jwksCache.keys.some((k) => k.kid === kid)) {
-    const doFetch = fetchJwks || ((url) => globalThis.fetch(url).then((r) => r.json()));
-    const body = await doFetch(GITHUB_ISSUER + "/.well-known/jwks");
-    jwksCache = { at: Date.now(), keys: Array.isArray(body && body.keys) ? body.keys : [] };
+  const now = Date.now();
+  const stale = !jwksCache || now - jwksCache.at > JWKS_MAX_AGE_MS;
+  const unknown = !jwksCache || !jwksCache.keys.some((k) => k.kid === kid);
+  const mayFetch = stale || now - jwksLastFetch >= JWKS_MIN_REFETCH_MS;
+  if ((stale || unknown) && mayFetch) {
+    jwksLastFetch = now;
+    let body = null;
+    try {
+      body = await (fetchJwks || defaultFetchJwks)(GITHUB_ISSUER + "/.well-known/jwks");
+    } catch (e) {
+      body = null;
+    }
+    const keys = body && Array.isArray(body.keys) ? body.keys.filter((k) => k && typeof k.kid === "string") : [];
+    if (keys.length) jwksCache = { at: now, keys };
   }
-  return jwksCache.keys;
+  return jwksCache ? jwksCache.keys : [];
+}
+
+/// For tests: forget cached keys and the refetch throttle.
+function _resetJwksCache() {
+  jwksCache = null;
+  jwksLastFetch = 0;
 }
 
 /// Returns the verified claims, or null. Never throws on a bad token.
@@ -216,16 +263,24 @@ async function handleAnchor(request, deps) {
   if (covered >= entries) {
     return reply(409, { error: "not append-only: already anchored " + covered + " entries", anchored: covered });
   }
+  if (entries - covered > MAX_ENTRIES_JUMP) {
+    return reply(400, { error: "entries is more than " + MAX_ENTRIES_JUMP + " past the last anchor (" + covered + "); anchor more often" });
+  }
   const wait = Number(last.timestamp) + minInterval - now;
   if (covered > 0 && minInterval > 0 && wait > 0) return reply(429, { error: "anchored recently; try again later", retryAfter: wait });
 
   let receipt;
+  let sent = null;
   try {
-    const tx = await contract.anchor(logId, entries, head, storageRoot);
-    receipt = await tx.wait();
+    sent = await contract.anchor(logId, entries, head, storageRoot);
+    receipt = await sent.wait(1, TX_TIMEOUT_MS);
   } catch (e) {
-    return reply(502, { error: "the anchor transaction failed; nothing was anchored" });
+    // Once sent, the anchor may still land: say so, rather than claim
+    // nothing happened and invite a retry that would then be refused.
+    if (sent) return reply(502, { error: "the anchor transaction was sent but not confirmed in time; check the registry before retrying", txHash: sent.hash });
+    return reply(502, { error: "the anchor transaction could not be sent; nothing was anchored" });
   }
+  if (!receipt) return reply(502, { error: "the anchor transaction was sent but not confirmed in time; check the registry before retrying", txHash: sent.hash });
   let index = null;
   for (const log of receipt.logs || []) {
     let parsed = null;
@@ -268,4 +323,4 @@ async function handlePins(request, deps) {
   });
 }
 
-module.exports = { handleAnchor, handlePins, parseCustomers, findByToken, verifyGithubOidc, sha256, DEFAULT_AUDIENCE, REGISTRY_ABI, DEFAULT_MIN_INTERVAL, GITHUB_ISSUER };
+module.exports = { handleAnchor, handlePins, parseCustomers, findByToken, verifyGithubOidc, sha256, parseMinInterval, _resetJwksCache, DEFAULT_AUDIENCE, REGISTRY_ABI, DEFAULT_MIN_INTERVAL, MAX_ENTRIES_JUMP, GITHUB_ISSUER };

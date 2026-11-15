@@ -199,9 +199,13 @@ async function checkChain() {
   }
   btn.disabled = true;
   btn.textContent = "Checking…";
+  // Known chains are pinned by id: the node is asked which chain it is on,
+  // and any other answer fails. A custom RPC is checked, but said to be one.
+  const known = PRESETS[rpc] || null;
+  const fromLink = linkPins && linkPins.logId === logId && linkPins.anchorer === anchorer && linkPins.registry === registry;
   try {
     const provider = new ethers.JsonRpcProvider(rpc);
-    const result = await GermlineVerify.verifyChain(current, provider, { logId, anchorer, registry });
+    const result = await GermlineVerify.verifyChain(current, provider, { logId, anchorer, registry, chainId: known ? known.chainId : undefined });
     const rows = result.results;
     const notes = rows.map((r) => {
       if (!r.ok) return (r.source === "registry" && r.index != null ? "anchor #" + r.index + ": " : "") + r.reason;
@@ -211,11 +215,15 @@ async function checkChain() {
       }
       return "transaction anchor " + r.txHash + " matches";
     }).concat(result.warnings.map((w) => "warning: " + w));
+    const where = known ? known.name + " (chain id " + known.chainId + ", confirmed with the node)" : "a custom RPC (" + rpc + "), chain not pinned";
+    notes.push("checked on " + where + ", registry " + registry + ", anchorer " + anchorer);
+    if (!known) notes.push("warning: a custom RPC can answer anything; use a chain from the list to rely on this result");
+    if (fromLink) notes.push("warning: the log ID, anchorer and registry came from the link you opened, not from your own records. Anyone can make a link with their own pins; compare them with what the log's owner gave you.");
     const failed = rows.filter((r) => !r.ok).length;
-    const anchors = rows.filter((r) => r.source !== "pin").length;
+    const anchors = rows.filter((r) => r.source === "registry" || r.source === "tx").length;
     render(current, failed || !anchors
       ? verdict("fail", "Does NOT match the chain", (failed || 1) + " of " + Math.max(rows.length, 1) + " check(s) failed", notes.length ? notes : ["nothing was anchored"])
-      : verdict("ok", "Matches the chain", anchors + " anchor(s) from " + anchorer + " all agree with this file", notes));
+      : verdict(known && !fromLink ? "ok" : "warn", "Matches " + (known ? known.name : "the custom RPC"), anchors + " anchor(s) from " + anchorer + " all agree with this file", notes));
   } catch (err) {
     render(current, verdict("fail", "Could not read the chain", String(err.shortMessage || err.message || err).slice(0, 200)));
   } finally {
@@ -243,6 +251,12 @@ drop.addEventListener("dragleave", () => drop.classList.remove("over"));
 drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && load(e.dataTransfer.files[0]); });
 document.getElementById("chainBtn").addEventListener("click", checkChain);
 const networkSel = document.getElementById("network");
+const PRESETS = {
+  "https://evmrpc.0g.ai": { name: "0G mainnet", chainId: 16661 },
+  "https://rpc.botchain.ai": { name: "BOT Chain mainnet", chainId: 677 },
+  "https://rpc.bohr.life": { name: "BOT Chain Bohr testnet", chainId: 968 },
+};
+let linkPins = null; // the pins a shared link filled in, to say so in the result
 networkSel.addEventListener("change", () => { document.getElementById("rpc").value = networkSel.value; });
 
 // One-click verification of a published log: verify.html?log=<url of audit.jsonl>
@@ -250,9 +264,17 @@ networkSel.addEventListener("change", () => { document.getElementById("rpc").val
 // checked here exactly as a dropped file would be.
 (function fromLink() {
   const q = new URLSearchParams(location.search);
-  for (const k of ["logId", "anchorer", "registry", "rpc"]) if (q.get(k)) document.getElementById(k).value = q.get(k);
-  const presets = { zerog: "https://evmrpc.0g.ai", botchain: "https://rpc.botchain.ai", bohr: "https://rpc.bohr.life" };
-  if (!q.get("rpc") && presets[q.get("network")]) document.getElementById("rpc").value = presets[q.get("network")];
+  for (const k of ["logId", "anchorer", "registry"]) if (q.get(k)) document.getElementById(k).value = q.get(k).trim();
+  linkPins = { logId: document.getElementById("logId").value, anchorer: document.getElementById("anchorer").value, registry: document.getElementById("registry").value };
+  // A link may only choose one of the listed chains. A custom RPC from a
+  // link could answer anything, so it is ignored, and the page says so.
+  const byName = { zerog: "https://evmrpc.0g.ai", botchain: "https://rpc.botchain.ai", bohr: "https://rpc.bohr.life" };
+  const asked = q.get("rpc") ? q.get("rpc").trim() : null;
+  const chosen = (asked && PRESETS[asked] && asked) || byName[q.get("network")] || null;
+  if (chosen) document.getElementById("rpc").value = chosen;
+  if (asked && !PRESETS[asked]) {
+    out.replaceChildren(el("div", { class: "panel" }, verdict("warn", "Ignored the RPC in this link", "The link named " + asked + ", which is not one of the listed chains. Choose the chain yourself.")));
+  }
   const rpcNow = document.getElementById("rpc").value;
   for (const o of networkSel.options) if (o.value === rpcNow) networkSel.value = rpcNow;
   const url = q.get("log");

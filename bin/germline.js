@@ -33,6 +33,20 @@ const path = require("path");
 const NETWORK_RPC = { zerog: "https://evmrpc.0g.ai", botchain: "https://rpc.botchain.ai", bohr: "https://rpc.bohr.life" };
 const DEFAULT_RPC =
   process.env.GERMLINE_RPC || process.env.ZEROG_RPC || NETWORK_RPC[process.env.GERMLINE_NETWORK] || "https://evmrpc.0g.ai";
+const NETWORK_CHAIN_ID = { zerog: 16661, botchain: 677, bohr: 968 };
+
+// The chain `verify --chain` must be reading: --chain-id, else the chain of a
+// named network or a known RPC. Unknown custom RPCs are not pinned.
+function expectedChainId(flags) {
+  if (flags["chain-id"] !== undefined) {
+    if (!/^[1-9][0-9]{0,15}$/.test(String(flags["chain-id"]))) throw new Error("--chain-id must be a positive integer");
+    return Number(flags["chain-id"]);
+  }
+  const named = NETWORK_CHAIN_ID[process.env.GERMLINE_NETWORK];
+  if (named && DEFAULT_RPC === NETWORK_RPC[process.env.GERMLINE_NETWORK]) return named;
+  for (const [name, url] of Object.entries(NETWORK_RPC)) if (url === DEFAULT_RPC) return NETWORK_CHAIN_ID[name];
+  return undefined;
+}
 
 // The registry to anchor into: --registry, then GERMLINE_REGISTRY, then the
 // address recorded in deployments/ for the chain the RPC reports. Null means
@@ -67,7 +81,7 @@ async function chainCheck(log, flags) {
   const { JsonRpcProvider } = require("ethers");
   const provider = new JsonRpcProvider(DEFAULT_RPC);
   const registry = await registryFor(flags, provider);
-  return log.verifyChain(provider, { ...pins(flags), registry: registry || undefined });
+  return log.verifyChain(provider, { ...pins(flags), registry: registry || undefined, chainId: expectedChainId(flags) });
 }
 
 // Which flags each command takes, and whether each takes a value. Anything
@@ -77,7 +91,7 @@ const VALUE = "value";
 const BOOL = "bool";
 const COMMON = { log: VALUE };
 const EVAL = { score: VALUE, baseline: VALUE, suite: VALUE, "eval-file": VALUE };
-const PINS = { "log-id": VALUE, anchorer: VALUE, registry: VALUE };
+const PINS = { "log-id": VALUE, anchorer: VALUE, registry: VALUE, "chain-id": VALUE };
 const SPEC = {
   record: { ...COMMON, ...EVAL, system: VALUE, actor: VALUE, before: VALUE, after: VALUE, reason: VALUE, ticket: VALUE, redact: BOOL },
   track: { ...COMMON, ...EVAL, actor: VALUE, reason: VALUE, ticket: VALUE },
@@ -132,8 +146,10 @@ function parse(argv) {
 
 // Log values printed to a terminal or CI log: no control characters, so a
 // key or actor cannot inject ANSI codes or GitHub "::" workflow commands.
+// The runner trims leading whitespace before reading a workflow command, so
+// "   ::error::" counts too.
 function plain(text) {
-  return String(text).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/^::/, ": :");
+  return String(text).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/^(\s*):/, "$1: ");
 }
 
 function evaluationFrom(flags) {
@@ -227,7 +243,7 @@ GERMLINE_ACTOR (default --actor), GERMLINE_REGISTRY (anchor registry). anchor --
 // not just the ones someone remembered to wrap.
 for (const stream of ["log", "error"]) {
   const write = console[stream].bind(console);
-  console[stream] = (...args) => write(args.map(String).join(" ").split("\n").map(plain).join("\n"));
+  console[stream] = (...args) => write(args.map(String).join(" ").split(/\r?\n|\r/).map(plain).join("\n"));
 }
 
 async function main() {
