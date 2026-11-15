@@ -1,5 +1,5 @@
 // Shared set-up for the hosted endpoints, read once per cold start.
-const { parseCustomers } = require("./hosted");
+const { parseCustomers, parseMinInterval } = require("./hosted");
 
 let cached = null;
 
@@ -21,7 +21,9 @@ function config() {
     chainId,
     // GitHub OIDC tokens must name this audience (default germline-hosted).
     audience: process.env.GERMLINE_HOSTED_AUDIENCE || undefined,
-    minInterval: process.env.GERMLINE_MIN_INTERVAL ? Number(process.env.GERMLINE_MIN_INTERVAL) : undefined,
+    // Throws on a malformed value, so the endpoint answers 503 rather than
+    // running without a rate limit.
+    minInterval: parseMinInterval(process.env.GERMLINE_MIN_INTERVAL),
   };
   return cached;
 }

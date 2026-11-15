@@ -75,9 +75,16 @@ first.
   pushes in between. If the branch is protected against bot pushes, either
   allow the workflow's token to bypass, or point `config.log` at a file on a
   separate branch. See docs/AUDIT.md.
-- **Raw bytes are pinned.** Each line must be the canonical serialisation of
+- **Each line's bytes are pinned.** Each line must be the canonical serialisation of
   its value (`JSON.stringify` of the parsed line), so duplicate keys, padded
   numbers and alternative escapes are rejected rather than parsed two ways.
+  Line endings and blank lines between entries are not part of any hash, so
+  compare logs by their entries, not by a digest of the whole file.
+- **The chain is pinned.** `verify --chain` asks the RPC node which chain it
+  is on and fails if it is not the expected one (from `--chain-id`, or the
+  known network). The browser verifier only takes chains from its list when
+  opening a shared link, and says when the pins came from the link itself:
+  pins are only as trustworthy as where you got them.
 - **Tracked paths stay inside the repository.** Absolute paths, `..`, any
   path that goes through a symbolic link, and anything under `.git` (in any
   letter case) are refused, so a merged config change cannot copy the CI
@@ -99,12 +106,22 @@ No owner, no upgrade path, no admin functions, no external calls, no ether
 handling. Anchors are keyed by `(logId, msg.sender)`, so one sender cannot
 write into another's history, and each key is append-only (`covered` must
 strictly increase). Storage grows by one struct per anchor, paid by the
-anchorer. Reads are paged (`anchorsOf`). Deployed on 0G mainnet at
-`0x18713A7ED60576C68B2CfE30D18839521a23cBcd` and on BOT Chain Bohr testnet at
-`0xC7a99F46674828aD14592fDaD319212f2ecd446D`; the CLI finds the registry for
-the chain its RPC reports from `deployments/*-anchor.json`. Not externally audited.
+anchorer. Reads are paged (`anchorsOf`). The CLI finds the registry for the
+chain its RPC reports from `deployments/*-anchor.json`. Not externally audited.
 
-## Known issues in Germline.sol (deployed at 0xA0448Cd6…7b25)
+| Chain | Chain id | GermlineAnchor (the registry to pin) |
+|---|---|---|
+| BOT Chain mainnet | 677 | `0xA0448Cd63f746a60447cfF1817ec9781C25F7b25` |
+| 0G mainnet | 16661 | `0x18713A7ED60576C68B2CfE30D18839521a23cBcd` |
+| BOT Chain Bohr testnet | 968 | `0xC7a99F46674828aD14592fDaD319212f2ecd446D` |
+
+One address means different contracts on different chains: on BOT Chain
+mainnet `0xA0448Cd6…7b25` is GermlineAnchor, while on 0G mainnet and Bohr the
+same address is the older Germline.sol lineage registry (each was the
+deployer's first transaction on its chain). Always pin the chain with the
+address.
+
+## Known issues in Germline.sol (0G mainnet and Bohr, at 0xA0448Cd6…7b25)
 
 The lineage registry predates the audit trail and is not what customers buy,
 but it is live, so its issues are listed here. Fixing them needs a new

@@ -152,7 +152,9 @@
         problems.push({ seq: index, reason: "line is not in canonical form (duplicate keys, reformatted numbers or escapes)" });
       }
       if (entry.format !== FORMAT) problems.push({ seq: index, reason: "unknown format " + JSON.stringify(entry.format) });
-      if (entry.seq !== index) problems.push({ seq: index, reason: "sequence number " + entry.seq + ", expected " + index });
+      // JSON.stringify: seq comes from the file, and a newline inside it
+      // would otherwise reach CI output as a line of its own.
+      if (entry.seq !== index) problems.push({ seq: index, reason: "sequence number " + JSON.stringify(entry.seq) + ", expected " + index });
       if (prev !== null && entry.prev !== prev) problems.push({ seq: index, reason: "does not link to the entry before it" });
       let expected = null;
       try {
@@ -219,11 +221,24 @@
     return out;
   }
 
+  // The chain the node is really on. Asked with eth_chainId, because a
+  // provider built with a static network answers getNetwork() from its own
+  // settings without asking anyone.
+  async function chainIdOf(provider) {
+    if (provider && typeof provider.send === "function") return Number(BigInt(await provider.send("eth_chainId", [])));
+    return Number((await provider.getNetwork()).chainId);
+  }
+
   /// Check entries against the chain. Returns { ok, results, warnings,
   /// logId, anchorers }, with one row in `results` per anchor checked: every
   /// anchor the registry holds for this log, plus every plain-transaction
   /// anchor the log lists. `logId`, `anchorer` and `registry` are the
   /// verifier's pins; each missing pin is a warning, never a silent pass.
+  ///
+  /// `chainId` pins the chain: the node behind `provider` is asked which
+  /// chain it is on (not the provider's own configuration, which a caller
+  /// can set to anything), and a different answer fails the check before
+  /// anything is read from it.
   async function verifyChain(all, provider, options = {}) {
     const local = verifyEntries(all);
     const results = [];
@@ -234,12 +249,27 @@
     // and ethers would otherwise throw on it in one verifier and not another.
     const lower = (a) => String(a).toLowerCase();
 
+    if (options.chainId !== undefined && options.chainId !== null) {
+      let actual = null;
+      try {
+        actual = await chainIdOf(provider);
+      } catch (error) {
+        results.push({ seq: null, source: "chain", ok: false, reason: "could not read the chain id: " + (error.shortMessage || error.message) });
+      }
+      if (actual !== null && actual !== Number(options.chainId)) {
+        results.push({ seq: null, source: "chain", ok: false, reason: "the RPC is on chain " + actual + ", not the pinned chain " + Number(options.chainId) });
+      }
+      if (results.length) return { ok: false, results, warnings, logId, anchorers: [] };
+    }
+
     if (!options.logId) warnings.push("log id not pinned: pass the id you were given, or a rewrite under a new id will not be caught");
     if (options.logId && local.logId && lower(options.logId) !== lower(local.logId)) {
       results.push({ seq: 0, source: "pin", ok: false, reason: "this log's id is " + local.logId + ", not the pinned " + options.logId });
     }
 
-    const pinnedAnchorers = options.anchorer ? [].concat(options.anchorer).map(lower) : null;
+    // An empty list is not a pin: it would skip every registry read and pass.
+    const pinnedList = options.anchorer ? [].concat(options.anchorer).filter(Boolean).map(lower) : [];
+    const pinnedAnchorers = pinnedList.length ? pinnedList : null;
     if (!pinnedAnchorers) warnings.push("anchorer not pinned: pass the address you expect, or anchors from any key are accepted");
     const anchorers = pinnedAnchorers || Array.from(new Set(anchorEntries.map((e) => lower(e.anchorer))));
 
@@ -306,7 +336,7 @@
     // Plain-transaction anchors: only the ones the log still lists.
     for (const e of anchorEntries) {
       if (e.mode === "registry") continue;
-      const row = { seq: e.seq, source: "tx", txHash: e.txHash, ok: false, reason: null };
+      const row = { seq: e.seq, source: "tx", txHash: e.txHash, anchorer: lower(e.anchorer), ok: false, reason: null };
       try {
         const tx = await provider.getTransaction(e.txHash);
         const expected = (ANCHOR_TAG + String(e.anchoredHead).slice(2)).toLowerCase();

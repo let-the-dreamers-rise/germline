@@ -327,6 +327,8 @@ concurrency:
 jobs:
   audit:
     runs-on: ubuntu-latest
+    # A stuck chain or RPC must not hold the concurrency group for hours.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:

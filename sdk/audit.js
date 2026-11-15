@@ -410,7 +410,16 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
   /// is written into the log, so a wrong answer from the service is caught
   /// here and not only at audit time.
   async function anchorHosted({ url, token, fetch: fetchFn, provider } = {}) {
-    if (!url || !/^https:\/\/[^\s/]+/.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/.test(url)) {
+    // Parsed, not pattern-matched: "http://localhost.evil.com" must not pass
+    // as local and receive the token in cleartext.
+    let parsedUrl = null;
+    try {
+      parsedUrl = new URL(String(url));
+    } catch (e) {
+      parsedUrl = null;
+    }
+    const local = parsedUrl && parsedUrl.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsedUrl.hostname);
+    if (!parsedUrl || (parsedUrl.protocol !== "https:" && !local) || parsedUrl.username || parsedUrl.password) {
       throw new Error("hosted anchoring needs an https URL (GERMLINE_HOSTED_URL)");
     }
     if (!token) throw new Error("hosted anchoring needs a token (GERMLINE_HOSTED_TOKEN)");
@@ -479,6 +488,28 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
     });
   }
 
+  // How long anchor() waits for its transaction to be mined.
+  const ANCHOR_TIMEOUT_MS = 3 * 60 * 1000;
+
+  // The registry's last anchor for this key, if it already covers exactly
+  // this head: { index, txHash, block }. Null when a new anchor is needed.
+  // Throws if the registry is ahead of this log, which no retry can fix.
+  async function anchoredAlready(contract, logId, anchorer, count, head) {
+    const total = Number(await contract.anchorCount(logId, anchorer));
+    if (total === 0) return null;
+    const [last] = await contract.anchorsOf(logId, anchorer, total - 1, 1);
+    const covered = Number(last.covered);
+    if (covered < count) return null;
+    if (covered === count && last.head === head) {
+      const index = total - 1;
+      const events = await contract.queryFilter(contract.filters.Anchored(logId, anchorer, index), Number(last.blockNumber), Number(last.blockNumber));
+      const txHash = events.length ? events[0].transactionHash : null;
+      if (!txHash) return null;
+      return { index, txHash, block: Number(last.blockNumber) };
+    }
+    throw new Error("the registry already holds an anchor of " + covered + " entries for this log from " + anchorer + " that this file does not match; the log was rewritten, or the key anchored another copy");
+  }
+
   async function anchor({ signer, upload = false, storage, registry, hosted } = {}) {
     if (hosted) return anchorHosted(hosted);
     if (!signer) throw new TypeError("anchor() needs an ethers signer connected to 0G Chain");
@@ -513,13 +544,36 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
     if (registry) {
       const { Contract, ZeroHash } = require("ethers");
       contract = new Contract(registry, REGISTRY_ABI, signer);
+      // A previous run may have anchored this exact head and then died, or
+      // lost the push of its receipt. Sending again would revert (entries
+      // must grow), so record the anchor that is already there instead.
+      const existing = await anchoredAlready(contract, check.logId, anchorer, check.entries, head);
+      if (existing) {
+        return append({
+          kind: "anchor",
+          mode: "registry",
+          logId: check.logId,
+          anchoredHead: head,
+          anchoredEntries: check.entries,
+          chainId: Number(network.chainId),
+          registry,
+          index: existing.index,
+          txHash: existing.txHash,
+          block: existing.block,
+          anchorer,
+          storage: null,
+        });
+      }
       tx = await contract.anchor(check.logId, check.entries, head, storageRoot || ZeroHash);
       mode = "registry";
     } else {
       tx = await signer.sendTransaction({ to: anchorer, value: 0, data: ANCHOR_TAG + head.slice(2) });
       mode = "tx";
     }
-    const receipt = await tx.wait();
+    // Bounded: a transaction that is never mined must not hold a CI job (and
+    // its concurrency group) for hours.
+    const receipt = await tx.wait(1, ANCHOR_TIMEOUT_MS);
+    if (!receipt) throw new Error("anchor transaction " + tx.hash + " was not mined within " + ANCHOR_TIMEOUT_MS / 1000 + "s; check it before retrying");
 
     // Read the index the registry assigned from its own event, rather than
     // predicting it beforehand and racing another anchor from the same key.
@@ -533,6 +587,12 @@ function openAuditLog(file = path.join(".germline", "audit.jsonl"), options = {}
         if (parsed && parsed.name === "Anchored") index = Number(parsed.args.index);
       }
       if (index === null) throw new Error("anchor transaction " + receipt.hash + " emitted no Anchored event");
+      // Read the anchor back from the registry rather than trusting the
+      // RPC's receipt: a receipt entry is permanent in an append-only log.
+      const [stored] = await contract.anchorsOf(check.logId, anchorer, index, 1);
+      if (!stored || stored.head !== head || Number(stored.covered) !== check.entries) {
+        throw new Error("the registry does not hold the anchor that transaction " + receipt.hash + " reported; nothing was recorded");
+      }
     }
 
     return append({
